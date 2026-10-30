@@ -149,6 +149,7 @@ public:
     /// plays the list from its first song with shuffle off
     Q_INVOKABLE void playInOrder(swiftify::SongListModel *model);
     Q_INVOKABLE void playSong(const swiftify::Song &song);
+    Q_INVOKABLE void startSongRadio(const swiftify::Song &song);
     /// debugging: plays a song whose load never finishes, so the loading
     /// animation of every visualizer can be watched for as long as wanted.
     /// it waits as a real load does, until paused, skipped or replaced
@@ -220,6 +221,7 @@ private:
     QCoro::Task<> runResume(CancelToken token);
     QCoro::Task<> restartAudioOutput(CancelToken token);
     QCoro::Task<> runLoadLyrics(Song song, CancelToken token);
+    QCoro::Task<> runStartSongRadio(Song song, CancelToken token);
     void cancelPlaybackRequest();
     void silenceWithdrawnPlayback();
     void handleEndOfTrack();
@@ -313,6 +315,7 @@ private:
     LyricsModel *m_lyricsModel;
     std::optional<Lyrics> m_lyrics;
     TaskSlot m_lyricsRequest;
+    TaskSlot m_radioRequest;
     bool m_loadingLyrics = false;
     QString m_lyricsMessage;
     int m_activeLyricIndex = -1;

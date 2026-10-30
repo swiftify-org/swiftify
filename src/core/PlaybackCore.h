@@ -48,6 +48,8 @@ public:
     /// an artist's top songs read through the session, shaped like the web
     /// api's top tracks response, which spotify took away
     virtual QCoro::Task<QString> artistTopTracksJson(QString artistUri) = 0;
+    /// a radio station's songs read through the session
+    virtual QCoro::Task<QString> radioJson(QString seedUri) = 0;
 
     virtual void play() = 0;
     virtual void pause() = 0;

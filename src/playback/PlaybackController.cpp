@@ -5,6 +5,7 @@
 #include "core/PlaybackCore.h"
 #include "spotify/SpotifySession.h"
 #include "playback/PlaybackState.h"
+#include "spotify/SpotifyJson.h"
 
 #include <QCoreApplication>
 #include <QLoggingCategory>
@@ -110,6 +111,7 @@ PlaybackController::~PlaybackController()
     savePlaybackState();
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
+    m_radioRequest.cancel();
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -532,6 +534,81 @@ void PlaybackController::playInOrder(SongListModel *model)
 void PlaybackController::playSong(const Song &song)
 {
     beginPlayback(song, {song}, false);
+}
+
+void PlaybackController::startSongRadio(const Song &song)
+{
+    if (!song.isValid() || song.isLocalFile()) {
+        return;
+    }
+
+    if (m_shuffle) {
+        m_shuffle = false;
+        emit shuffleChanged();
+    }
+
+    const CancelToken token = m_radioRequest.renew();
+
+    const bool alreadyPlaying = m_currentSong && m_currentSong->uri == song.uri;
+    if (alreadyPlaying) {
+        m_queue = { *m_currentSong };
+        m_shuffledQueue.clear();
+        queueDidChange();
+        syncMediaSession();
+    } else {
+        beginPlayback(song, {song}, false);
+    }
+
+    detach(runStartSongRadio(song, token));
+}
+
+QCoro::Task<> PlaybackController::runStartSongRadio(Song song, CancelToken token)
+{
+    try {
+        if (song.uri.isEmpty()) {
+            m_radioRequest.finish(token);
+            co_return;
+        }
+
+        const QString jsonStr = co_await m_core->radioJson(song.uri);
+        throwIfCancelled(token);
+
+        const QJsonDocument document = QJsonDocument::fromJson(jsonStr.toUtf8());
+        const QJsonArray tracksArray = document.object().value(QStringLiteral("tracks")).toArray();
+        QList<Song> recommendations;
+        recommendations.reserve(tracksArray.size());
+        for (const QJsonValue &val : tracksArray) {
+            if (const auto track = json::track(val.toObject())) {
+                recommendations.append(*track);
+            }
+        }
+
+        const Song activeSong = m_currentSong.value_or(song);
+        QList<Song> newQueue;
+        newQueue.append(activeSong);
+        for (const Song &item : recommendations) {
+            if (item.uri != activeSong.uri) {
+                newQueue.append(item);
+            }
+        }
+
+        if (m_currentSong && m_currentSong->uri == activeSong.uri) {
+            m_queue = newQueue;
+            if (m_shuffle) {
+                rebuildShuffledQueue(activeSong);
+            } else {
+                m_shuffledQueue.clear();
+            }
+            queueDidChange();
+            syncMediaSession();
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        reportError(QStringLiteral("Starting Song Radio"), error.message());
+    } catch (const std::exception &e) {
+        reportError(QStringLiteral("Starting Song Radio"), QString::fromUtf8(e.what()));
+    }
+    m_radioRequest.finish(token);
 }
 
 void PlaybackController::playLoadingTest()
@@ -1477,6 +1554,7 @@ void PlaybackController::reset()
     m_remote = false;
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
+    m_radioRequest.cancel();
     m_queue.clear();
     m_history.clear();
     m_shuffledQueue.clear();

@@ -31,6 +31,7 @@ pub mod live_input;
 pub mod local;
 mod output;
 mod playlist;
+mod radio;
 mod spectrum;
 
 use dsp::{EQ_BAND_COUNT, SharedDsp};
@@ -1143,6 +1144,11 @@ impl SpotifyCore {
     /// the web api's top tracks response, which spotify took away
     pub async fn artist_top_tracks_json(&self, artist_uri: String) -> Result<String, String> {
         artist::artist_top_tracks_json(&self.session()?, &artist_uri).await
+    }
+
+    /// a radio station's songs read through the session as json
+    pub async fn radio_json(&self, seed_uri: String) -> Result<String, String> {
+        radio::radio_json(&self.session()?, &seed_uri).await
     }
 
     pub fn spectrum_levels(&self) -> Vec<f32> {

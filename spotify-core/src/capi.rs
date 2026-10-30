@@ -455,6 +455,12 @@ async_call!(
         core.artist_top_tracks_json(artist_uri).await
     }
 );
+async_call!(
+    /// completes with a radio station's songs as json, read through the session.
+    swiftify_core_radio_json(seed_uri) => |core| {
+        core.radio_json(seed_uri).await
+    }
+);
 
 /// what a music file's tags say, as json (crate::local::LocalTags), or null
 /// with `*error` set. an embedded cover is written into `artwork_dir`. it

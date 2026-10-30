@@ -67,6 +67,16 @@ StyledMenu {
         symbol: "person"
         onTriggered: UiState.goToArtist(root.song)
     }
+    StyledMenuItem {
+        visible: !root.local
+        height: visible ? implicitHeight : 0
+        text: qsTr("Go to Song Radio")
+        symbol: "radio"
+        onTriggered: {
+            UiState.toastRequested(qsTr("Starting song radio…"))
+            Player.startSongRadio(root.song)
+        }
+    }
     StyledMenuSeparator {}
     StyledMenuItem {
         text: qsTr("Play Next")

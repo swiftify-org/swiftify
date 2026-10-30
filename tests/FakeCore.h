@@ -122,6 +122,7 @@ public:
     QCoro::Task<QString> lyricsJson(QString uri) override { co_return co_await await(QStringLiteral("lyrics"), uri); }
     QCoro::Task<QString> playlistJson(QString uri) override { co_return co_await await(QStringLiteral("playlist"), uri); }
     QCoro::Task<QString> artistTopTracksJson(QString uri) override { co_return co_await await(QStringLiteral("topTracks"), uri); }
+    QCoro::Task<QString> radioJson(QString uri) override { co_return co_await await(QStringLiteral("radio"), uri); }
 
     void play() override
     {

@@ -74,6 +74,9 @@ void swiftify_core_playlist_json(const SwiftifyCore *core, uint64_t request_id,
  * /v1/artists/{id}/top-tracks response. */
 void swiftify_core_artist_top_tracks_json(const SwiftifyCore *core, uint64_t request_id,
                                           const char *artist_uri);
+/* a radio station's songs, read through the session (Mercury / SpClient). */
+void swiftify_core_radio_json(const SwiftifyCore *core, uint64_t request_id,
+                              const char *seed_uri);
 /* plays a music file of the person's own from anywhere on disk: mp3, flac,
  * ogg vorbis, wav, aiff, or aac or apple lossless in an m4a. */
 void swiftify_core_play_file(const SwiftifyCore *core, uint64_t request_id, const char *path);
