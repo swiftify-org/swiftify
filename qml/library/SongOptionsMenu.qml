@@ -85,6 +85,16 @@ StyledMenu {
         symbol: "person"
         onTriggered: UiState.goToArtist(root.song)
     }
+    StyledMenuItem {
+        visible: !root.local && root.song.shareUrl.length > 0
+        height: visible ? implicitHeight : 0
+        text: qsTr("Copy Link")
+        symbol: "link"
+        onTriggered: {
+            App.copyToClipboard(root.song.shareUrl)
+            UiState.toastRequested(qsTr("Song link copied"))
+        }
+    }
     StyledMenuSeparator {}
     StyledMenuItem {
         text: qsTr("Play Next")
