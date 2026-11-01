@@ -43,6 +43,7 @@ use serde::Serialize;
 use tokio::{sync::watch, time::timeout};
 
 mod artist;
+mod connect;
 mod dsp;
 mod file_playback;
 pub mod live_input;
@@ -99,6 +100,9 @@ pub fn core_version() -> String {
 }
 
 struct SpotifyState {
+    connect_options: connect::Options,
+    connect: Option<connect::Controller>,
+    connect_cleanup: Option<tokio::task::JoinHandle<()>>,
     session: Option<Session>,
     player: Option<PlayerSlot>,
     standby_player: Option<PlayerSlot>,
@@ -119,6 +123,9 @@ struct SpotifyState {
 impl Default for SpotifyState {
     fn default() -> Self {
         Self {
+            connect_options: connect::Options::default(),
+            connect: None,
+            connect_cleanup: None,
             session: None,
             player: None,
             standby_player: None,
@@ -224,7 +231,9 @@ pub const SUPERSEDED: &str = "the request was replaced by a newer one";
 pub const UNAVAILABLE: &str = "Spotify will not play this track.";
 
 pub struct SpotifyCore {
-    state: Mutex<SpotifyState>,
+    state: Arc<Mutex<SpotifyState>>,
+    connect_bridge: Arc<connect::Bridge>,
+    connection_generation: watch::Sender<u64>,
     /// bumped by every request that changes what plays: each song asked for,
     /// an output rebuilt, a session replaced. a request keeps the number it
     /// started with, and once that is no longer the latest it gives up
@@ -264,7 +273,9 @@ impl SpotifyCore {
     pub fn new() -> Self {
         start_logging();
         Self {
-            state: Mutex::new(SpotifyState::default()),
+            state: Arc::new(Mutex::new(SpotifyState::default())),
+            connect_bridge: Arc::new(connect::Bridge::default()),
+            connection_generation: watch::Sender::new(0),
             playback_generation: watch::Sender::new(0),
             switching: Mutex::new(()),
             spectrum: SharedSpectrum::new(),
@@ -316,6 +327,10 @@ impl SpotifyCore {
             Arc::clone(&self.timeline),
             Arc::clone(&self.local_playback_active),
             Arc::clone(&active),
+            Arc::clone(&self.connect_bridge),
+            Arc::downgrade(&self.state),
+            self.playback_generation.clone(),
+            Arc::as_ptr(&player) as usize,
         ));
         PlayerSlot {
             player,
@@ -366,15 +381,25 @@ impl SpotifyCore {
         credentials: Credentials,
         client_id: String,
     ) -> Result<String, String> {
+        let mut connection_ticket = 0;
+        self.connection_generation.send_modify(|generation| {
+            *generation += 1;
+            connection_ticket = *generation;
+        });
+        let mut connection_changes = self.connection_generation.subscribe();
         let client_id = client_id.trim();
         if client_id.is_empty() {
             return Err("spotify client ID cannot be empty".to_owned());
         }
 
-        let session_config = SessionConfig {
+        let connect_options = self.lock_state()?.connect_options.clone();
+        let mut session_config = SessionConfig {
             client_id: client_id.to_owned(),
             ..SessionConfig::default()
         };
+        if connect_options.enabled {
+            session_config.device_id = connect_options.device_id.clone();
+        }
 
         self.output_health.clear();
         // the songs streamed are kept (still encrypted, as spotify sends them)
@@ -387,17 +412,16 @@ impl SpotifyCore {
                 .ok()
         });
         let session = Session::new(session_config, cache);
-        session
-            .connect(credentials, false)
-            .await
-            .map_err(|error| format!("failed to connect to spotify: {error}"))?;
-        let login = serde_json::to_string(&Credentials {
-            username: Some(session.username()),
-            auth_type: AuthenticationType::AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS,
-            auth_data: session.auth_data(),
-        })
-        .map_err(|error| format!("could not keep the playback login: {error}"))?;
-
+        if !connect_options.enabled {
+            tokio::select! {
+                result = session.connect(credentials.clone(), false) => {
+                    result.map_err(|error| format!("failed to connect to spotify: {error}"))?;
+                }
+                _ = connection_changes.wait_for(|generation| *generation != connection_ticket) => {
+                    return Err(SUPERSEDED.to_owned());
+                }
+            }
+        }
         let mixer_builder =
             mixer::find(None).ok_or_else(|| "no librespot volume mixer is available".to_owned())?;
         let mixer = mixer_builder(MixerConfig::default())
@@ -410,23 +434,60 @@ impl SpotifyCore {
         let player = self.make_player_slot(&session, &mixer, player_config.clone(), true, 1.0);
         let standby = self.make_player_slot(&session, &mixer, player_config, false, 0.0);
 
+        // Stop the old controller before re-registering the same device ID.
+        self.connect_bridge.clear();
+        let previous_controller = self.lock_state()?.connect.take();
+        if let Some(controller) = previous_controller {
+            controller.stop().await;
+        }
+        let previous_cleanup = self.lock_state()?.connect_cleanup.take();
+        if let Some(cleanup) = previous_cleanup {
+            let _ = cleanup.await;
+        }
+        self.connect_bridge.clear();
+        let controller = if connect_options.enabled {
+            let start = connect::Controller::start(
+                session.clone(), credentials, Arc::clone(&player.player), Arc::clone(&mixer),
+                self.volume(), Arc::clone(&self.connect_bridge),
+            );
+            Some(tokio::select! {
+                result = start => result?,
+                _ = connection_changes.wait_for(|generation| *generation != connection_ticket) => {
+                    return Err(SUPERSEDED.to_owned());
+                }
+            })
+        } else {
+            None
+        };
+        let login = serde_json::to_string(&Credentials {
+            username: Some(session.username()),
+            auth_type: AuthenticationType::AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS,
+            auth_data: session.auth_data(),
+        }).map_err(|error| format!("could not keep the playback login: {error}"))?;
+
         // a request still waiting on the old player would keep it alive, and
         // its song would play beside whatever the new one plays
         self.begin_playback_request();
         let (previous, old_standby) = {
             let _switching = self.lock_switching();
             let mut state = self.lock_state()?;
+            if *self.connection_generation.borrow() != connection_ticket {
+                return Err(SUPERSEDED.to_owned());
+            }
             mixer.set_volume((state.volume * VolumeCtrl::MAX_VOLUME as f32).round() as u16);
             state.session = Some(session);
+            state.connect = controller;
             state.mixer = Some(mixer);
             (state.player.replace(player), state.standby_player.replace(standby))
         };
         // drop outside the state lock because this may wait on the player thread
         if let Some(previous) = previous {
+            previous.active.store(false, Ordering::Release);
             previous.player.stop();
             drop(previous);
         }
         if let Some(old_standby) = old_standby {
+            old_standby.active.store(false, Ordering::Release);
             old_standby.player.stop();
         }
 
@@ -434,10 +495,15 @@ impl SpotifyCore {
     }
 
     pub fn disconnect(&self) {
+        self.connection_generation.send_modify(|generation| *generation += 1);
         self.begin_playback_request();
         self.clear_local_playback();
+        self.connect_bridge.clear();
         let players = self.lock_state().ok().map(|mut state| {
             let players = (state.player.take(), state.standby_player.take());
+            if let Some(controller) = state.connect.take() {
+                state.connect_cleanup = Some(controller.shutdown());
+            }
             state.session = None;
             state.mixer = None;
             state.local_sink = None;
@@ -445,9 +511,11 @@ impl SpotifyCore {
         });
         if let Some((active, standby)) = players {
             if let Some(active) = active {
+                active.active.store(false, Ordering::Release);
                 active.player.pause();
             }
             if let Some(standby) = standby {
+                standby.active.store(false, Ordering::Release);
                 standby.player.pause();
             }
         }
@@ -505,7 +573,8 @@ impl SpotifyCore {
             Err(_) => return false,
         };
         match &state.session {
-            Some(session) => !session.is_invalid(),
+            Some(session) => !session.is_invalid()
+                && state.connect.as_ref().is_none_or(|controller| controller.is_alive()),
             None => false,
         }
     }
@@ -558,10 +627,12 @@ impl SpotifyCore {
             (state.player.take(), state.standby_player.take())
         };
         if let Some(previous) = previous.0 {
+            previous.active.store(false, Ordering::Release);
             previous.player.stop();
             drop(previous);
         }
         if let Some(previous) = previous.1 {
+            previous.active.store(false, Ordering::Release);
             previous.player.stop();
             drop(previous);
         }
@@ -570,6 +641,10 @@ impl SpotifyCore {
         let player = self.make_player_slot(&session, &mixer, player_config.clone(), true, 1.0);
         let standby = self.make_player_slot(&session, &mixer, player_config, false, 0.0);
         let mut state = self.lock_state()?;
+        if let Some(controller) = &state.connect {
+            self.connect_bridge.set_player(&player.player);
+            controller.spirc.set_local_player(Arc::clone(&player.player)).map_err(|e| e.to_string())?;
+        }
         state.player = Some(player);
         state.standby_player = Some(standby);
         self.reset_timeline();
@@ -627,7 +702,11 @@ impl SpotifyCore {
                 standby.player.stop();
             }
             self.reset_timeline();
-            player.load(uri.clone(), true, 0);
+            if let Some(controller) = &self.lock_state()?.connect {
+                controller.load(spotify_uri.clone(), Arc::clone(&player))?;
+            } else {
+                player.load(uri.clone(), true, 0);
+            }
         }
 
         loop {
@@ -702,7 +781,11 @@ impl SpotifyCore {
             }
             self.clear_local_playback();
             incoming.set_gain(0.0);
-            incoming.player.load(uri.clone(), true, 0);
+            if let Some(controller) = &self.lock_state()?.connect {
+                controller.load(spotify_uri.clone(), Arc::clone(&incoming.player))?;
+            } else {
+                incoming.player.load(uri.clone(), true, 0);
+            }
         }
 
         let mut duration = 0;
@@ -712,14 +795,18 @@ impl SpotifyCore {
                     .map_err(|_| "timed out while loading the Spotify track".to_owned())?
                     .ok_or_else(|| "the standby Spotify player stopped unexpectedly".to_owned())?,
                 _ = newer.wait_for(|generation| *generation != ticket) => {
-                    incoming.set_gain(0.0);
-                    incoming.player.stop();
+                    if !self.connect_bridge.remote_queue.load(Ordering::Acquire) {
+                        incoming.set_gain(0.0);
+                        incoming.player.stop();
+                    }
                     return Err(SUPERSEDED.to_owned());
                 }
             };
             if !self.is_latest_request(ticket) {
-                incoming.set_gain(0.0);
-                incoming.player.stop();
+                if !self.connect_bridge.remote_queue.load(Ordering::Acquire) {
+                    incoming.set_gain(0.0);
+                    incoming.player.stop();
+                }
                 return Err(SUPERSEDED.to_owned());
             }
             match event {
@@ -729,8 +816,10 @@ impl SpotifyCore {
                     if !state.player.as_ref().is_some_and(|slot| Arc::ptr_eq(&slot.player, &outgoing.player))
                         || !state.standby_player.as_ref().is_some_and(|slot| Arc::ptr_eq(&slot.player, &incoming.player))
                     {
-                        incoming.set_gain(0.0);
-                        incoming.player.stop();
+                        if !self.connect_bridge.remote_queue.load(Ordering::Acquire) {
+                            incoming.set_gain(0.0);
+                            incoming.player.stop();
+                        }
                         return Err(SUPERSEDED.to_owned());
                     }
                     outgoing.active.store(false, Ordering::Release);
@@ -765,7 +854,7 @@ impl SpotifyCore {
             let started = Instant::now();
             let fade_duration = Duration::from_millis(u64::from(fade_ms));
             loop {
-                if !core.is_latest_request(ticket) {
+                if !core.is_latest_request(ticket) || core.connect_bridge.remote_queue.load(Ordering::Acquire) {
                     incoming.set_gain(1.0);
                     outgoing.set_gain(0.0);
                     outgoing.player.stop();
@@ -793,7 +882,12 @@ impl SpotifyCore {
 
         self.spectrum.clear();
         self.reset_timeline();
-        self.ensure_player_slots()?.0.player.load(uri, true, 0);
+        let player = self.ensure_player_slots()?.0.player;
+        if let Some(controller) = &self.lock_state()?.connect {
+            controller.load(spotify_uri, player)?;
+        } else {
+            player.load(uri, true, 0);
+        }
         Ok(())
     }
 
@@ -807,6 +901,10 @@ impl SpotifyCore {
             sink.play();
             return Ok(());
         }
+        if let Some(controller) = &self.lock_state()?.connect {
+            controller.spirc.play().map_err(|e| e.to_string())?;
+            return Ok(());
+        }
         self.player()?.play();
         Ok(())
     }
@@ -815,6 +913,10 @@ impl SpotifyCore {
     /// behind a file, or the other way round, must not start up
     /// and play over it
     pub fn pause(&self) -> Result<(), String> {
+        if let Some(controller) = &self.lock_state()?.connect {
+            // A failed Connect loop must never prevent the audio being silenced.
+            let _ = controller.spirc.pause();
+        }
         let local = self.local_active()?;
         let (active, standby, sink) = {
             let state = self.lock_state()?;
@@ -843,7 +945,11 @@ impl SpotifyCore {
         if self.local_active()? {
             return self.local_seek(position_ms);
         }
-        self.player()?.seek(position_ms);
+        if let Some(controller) = &self.lock_state()?.connect {
+            controller.spirc.set_position_ms(position_ms).map_err(|e| e.to_string())?;
+        } else {
+            self.player()?.seek(position_ms);
+        }
         if let Ok(mut timeline) = self.timeline.lock() {
             timeline.observe_position(position_ms, None);
         }
@@ -876,6 +982,9 @@ impl SpotifyCore {
     }
 
     pub fn take_end_of_track(&self) -> bool {
+        if self.connect_bridge.remote_queue.load(Ordering::Acquire) {
+            return false;
+        }
         self.timeline
             .lock()
             .map(|mut timeline| std::mem::take(&mut timeline.end_of_track))
@@ -955,6 +1064,7 @@ impl SpotifyCore {
         // a song it was still loading over this
         self.begin_playback_request();
         self.clear_local_playback();
+        self.deactivate_connect()?;
         if let Ok((active, standby)) = self.player_slots() {
             active.player.stop();
             if let Some(standby) = standby {
@@ -1052,6 +1162,7 @@ impl SpotifyCore {
             return Err(SUPERSEDED.to_owned());
         }
         self.clear_local_playback();
+        self.deactivate_connect()?;
         // stopped, not paused: a stream still loading would otherwise be
         // kept, and start when it arrives, over this track
         if let Ok((active, standby)) = self.player_slots() {
@@ -1130,6 +1241,9 @@ impl SpotifyCore {
         if let Some(mixer) = &state.mixer {
             mixer.set_volume((volume * VolumeCtrl::MAX_VOLUME as f32).round() as u16);
         }
+        if let Some(controller) = &state.connect {
+            let _ = controller.spirc.set_volume((volume * u16::MAX as f32).round() as u16);
+        }
         if let Some(sink) = &state.local_sink {
             sink.set_volume(volume);
         }
@@ -1138,6 +1252,37 @@ impl SpotifyCore {
 
     pub fn volume(&self) -> f32 {
         self.lock_state().map(|state| state.volume).unwrap_or(0.75)
+    }
+
+    /// Registration is opt-in and changes only apply to the next connection.
+    pub fn set_spotify_connect(&self, enabled: bool, device_id: String) -> Result<(), String> {
+        if enabled && device_id.trim().is_empty() {
+            return Err("Spotify Connect requires a device ID".to_owned());
+        }
+        self.lock_state()?.connect_options = connect::Options { enabled, device_id };
+        Ok(())
+    }
+
+    pub fn take_connect_events(&self) -> String {
+        self.connect_bridge.take_events()
+    }
+
+    fn deactivate_connect(&self) -> Result<(), String> {
+        self.connect_bridge.remote_queue.store(false, Ordering::Release);
+        if let Some(controller) = &self.lock_state()?.connect {
+            // Local files still work if the network/controller has gone away.
+            let _ = controller.spirc.disconnect(true);
+        }
+        Ok(())
+    }
+
+    pub fn skip_remote(&self, forward: bool) -> bool {
+        if !self.connect_bridge.remote_queue.load(Ordering::Acquire) {
+            return false;
+        }
+        self.lock_state().ok().and_then(|state| state.connect.as_ref().map(|controller| {
+            if forward { controller.spirc.next() } else { controller.spirc.prev() }.is_ok()
+        })).unwrap_or(false)
     }
 
     pub async fn lyrics_json(&self, spotify_uri: String) -> Result<String, String> {
@@ -1517,8 +1662,19 @@ async fn monitor_player_events(
     timeline: Arc<Mutex<PlaybackTimeline>>,
     local_playback_active: Arc<AtomicBool>,
     slot_active: Arc<AtomicBool>,
+    connect_bridge: Arc<connect::Bridge>,
+    state: std::sync::Weak<Mutex<SpotifyState>>,
+    playback_generation: watch::Sender<u64>,
+    player_id: usize,
 ) {
     while let Some(event) = events.recv().await {
+        if slot_active.load(Ordering::Acquire) || connect_bridge.follows_remote_player(player_id) {
+            if matches!(event, PlayerEvent::Loading { .. })
+                && connect_bridge.remote_queue.load(Ordering::Acquire) {
+                playback_generation.send_modify(|generation| *generation += 1);
+            }
+            connect_bridge.observe(&event, &state, &local_playback_active);
+        }
         // the connected librespot player remains alive while a file of the
         // person's own is playing. ignore its late position/end events so they cannot advance
         // the local playback queue after a seek.

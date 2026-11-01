@@ -47,3 +47,4 @@ strip = "debuginfo"
 
 [patch.crates-io]
 librespot-core = { path = "vendor/librespot-core" }
+librespot-connect = { path = "vendor/librespot-connect" }

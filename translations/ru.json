@@ -1,4 +1,7 @@
 {
+  "Spotify Connect": "Spotify Connect",
+  "Spotify Connect Registration": "Регистрация в Spotify Connect",
+  "Shows Swiftify's librespot state to other Spotify apps. Requires a playback reconnect.": "Отображает состояние librespot в Swiftify для других приложений Spotify. Требуется повторное подключение воспроизведения.",
   "Connection refused": "Соединение отклонено",
   "Player bar visualizer": "Визуализация в нижнем плеере",
   "Track list visualizer": "Визуализация в списке треков",

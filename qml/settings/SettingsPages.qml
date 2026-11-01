@@ -209,6 +209,20 @@ Item {
             visible: root.page === 2
 
             ContentSection {
+                title: qsTr("Spotify Connect")
+                symbol: "devices"
+
+                ConfigSwitch {
+                    text: qsTr("Spotify Connect Support")
+                    checked: Settings.spotifyConnectEnabled
+                    onToggledTo: (checked) => Settings.spotifyConnectEnabled = checked
+                }
+                NoteText {
+                    text: qsTr("Shows Swiftify's librespot state to other Spotify apps. Requires a playback reconnect.")
+                }
+            }
+
+            ContentSection {
                 title: qsTr("Crossfade")
                 symbol: "play_circle"
 

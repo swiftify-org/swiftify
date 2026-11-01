@@ -72,6 +72,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QSocketNotifier>
+#include <QUuid>
 #include <QtQml/qqmlextensionplugin.h>
 
 #ifdef Q_OS_UNIX
@@ -302,6 +303,11 @@ int main(int argc, char *argv[])
     Theme theme(&settings);
     QNetworkAccessManager network;
     RustCore rustCore;
+    QString connectDeviceId = settings.value(QStringLiteral("spotifyConnectDeviceId")).toString();
+    if (connectDeviceId.isEmpty()) {
+        connectDeviceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        settings.setValue(QStringLiteral("spotifyConnectDeviceId"), connectDeviceId);
+    }
 #ifdef SWIFTIFY_HAS_SOLOIST
     // spotify's songs through soloist when it is installed and has a key, with
     // the rust core keeping the login, lyrics and local files
@@ -313,6 +319,16 @@ int main(int argc, char *argv[])
 #else
     PlaybackCore &core = rustCore;
 #endif
+    const auto applyConnect = [&] {
+        // Soloist is already a Connect client; never register its fallback too.
+#ifdef SWIFTIFY_HAS_SOLOIST
+        rustCore.setSpotifyConnect(settings.spotifyConnectEnabled() && !soloistCore, connectDeviceId);
+#else
+        rustCore.setSpotifyConnect(settings.spotifyConnectEnabled(), connectDeviceId);
+#endif
+    };
+    applyConnect();
+    QObject::connect(&settings, &Settings::spotifyConnectEnabledChanged, &rustCore, applyConnect);
     // what playback connects with: the streaming quality, and how much of
     // what it streams is kept so a song played again needs no download
     const auto applyStreaming = [&] {

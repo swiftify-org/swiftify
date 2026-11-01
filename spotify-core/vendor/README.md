@@ -12,3 +12,10 @@ This matches the working desktop/Keymaster OAuth path and does not change the iO
 target or Core Audio output.
 
 Remove the crates.io patch in `spotify-core/Cargo.toml` when upstream resolves the iOS issue.
+
+## Connect queue adapter
+
+`librespot-connect` 0.8.0 is also vendored for optional Spotify Connect registration.
+Its small application-queue adapter preserves Swiftify's queue and two-player
+crossfades while using upstream registration, state reporting and remote contexts.
+See `librespot-connect/SWIFTIFY.md` for the added interface.

@@ -22,6 +22,7 @@
 
 #include <QHash>
 #include <QSocketNotifier>
+#include <QTimer>
 
 #include <memory>
 
@@ -64,6 +65,8 @@ public:
     void setStreamQuality(int kbps) override;
     void setVolumeNormalization(bool enabled) override;
     void setAudioCache(const QString &path, qint64 limitBytes) override;
+    void setSpotifyConnect(bool enabled, const QString &deviceId) override;
+    bool skipRemote(bool forward) override;
     void setPlaybackShaping(float tempo, float pitchSemitones, bool preservesPitch) override;
     void setPreampGain(float gainDb) override;
     void setEqualizer(const QList<float> &gainsDb) override;
@@ -86,6 +89,7 @@ private:
     void open();
     void close();
     void drainCompletions();
+    void drainConnectEvents();
     /// starts a call through `start` and waits for its completion
     template <typename Start>
     QCoro::Task<QString> request(Start start);
@@ -100,6 +104,9 @@ private:
     bool m_normalizeVolume = false;
     QString m_cachePath;
     qint64 m_cacheBytes = 0;
+    bool m_connectEnabled = false;
+    QString m_connectDeviceId;
+    QTimer m_connectEvents;
 };
 
 } // namespace swiftify
