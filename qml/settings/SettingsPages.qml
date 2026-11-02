@@ -390,7 +390,11 @@ Item {
                             enabled: Settings.russianEnabled
                             tooltip: Settings.russianEnabled ? "" : Settings.disabledLanguageMessage
                         },
-                        Segment { text: "Deutsch" }
+                        Segment {
+                            text: "Deutsch"
+                            enabled: Settings.germanEnabled
+                            tooltip: Settings.germanEnabled ? "" : Settings.disabledLanguageMessage
+                        }
                     ]
                     onActivated: (index) => Settings.language = ["system", "en", "ru", "de"][index]
                 }

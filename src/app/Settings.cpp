@@ -630,6 +630,11 @@ bool Settings::isRussianEnabled() const
     return Translations::isLanguageEnabled(QStringLiteral("ru"));
 }
 
+bool Settings::isGermanEnabled() const
+{
+    return Translations::isLanguageEnabled(QStringLiteral("de"));
+}
+
 QString Settings::disabledLanguageMessage() const
 {
     return Translations::disabledLanguageMessage();

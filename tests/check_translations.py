@@ -39,10 +39,10 @@ def unique_object(pairs):
     return result
 
 
-# (name, catalog file, number of plural forms, enable flag or None for always on)
+# (name, catalog file, number of plural forms, enable flag in Translations.h)
 languages = [
     ("Russian", "translations/ru.json", 3, "kRussianTranslationEnabled"),
-    ("German", "translations/de.json", 2, None),
+    ("German", "translations/de.json", 2, "kGermanTranslationEnabled"),
 ]
 
 sources = []

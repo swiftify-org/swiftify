@@ -77,6 +77,9 @@ private slots:
 
     void germanLanguagePreferencePersists()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         QTemporaryDir directory;
         const QString path = directory.filePath(QStringLiteral("swiftify.conf"));
         {

@@ -32,12 +32,16 @@ namespace swiftify {
 
 namespace {
 bool s_russianEnabled = kRussianTranslationEnabled;
+bool s_germanEnabled = kGermanTranslationEnabled;
 } // namespace
 
 bool Translations::isLanguageEnabled(QStringView language)
 {
     if (language == QLatin1StringView("ru")) {
         return s_russianEnabled;
+    }
+    if (language == QLatin1StringView("de")) {
+        return s_germanEnabled;
     }
     return true;
 }
@@ -52,12 +56,21 @@ void Translations::setLanguageEnabled(QStringView language, bool enabled)
         if (auto *settings = Settings::instance()) {
             settings->enforceEnabledLanguage();
         }
+    } else if (language == QLatin1StringView("de")) {
+        if (s_germanEnabled == enabled) {
+            return;
+        }
+        s_germanEnabled = enabled;
+        if (auto *settings = Settings::instance()) {
+            settings->enforceEnabledLanguage();
+        }
     }
 }
 
 void Translations::resetLanguageEnabled()
 {
     setLanguageEnabled(QStringLiteral("ru"), kRussianTranslationEnabled);
+    setLanguageEnabled(QStringLiteral("de"), kGermanTranslationEnabled);
 }
 
 QString Translations::disabledLanguageMessage()
@@ -135,7 +148,8 @@ void Translations::apply()
     if (isLanguageEnabled(QStringLiteral("ru"))
         && (language == QLatin1StringView("ru") || (followSystem && systemLanguage == QLocale::Russian))) {
         m_active = &m_russian;
-    } else if (language == QLatin1StringView("de") || (followSystem && systemLanguage == QLocale::German)) {
+    } else if (isLanguageEnabled(QStringLiteral("de"))
+               && (language == QLatin1StringView("de") || (followSystem && systemLanguage == QLocale::German))) {
         m_active = &m_german;
     }
     QLocale::setDefault(m_active == &m_russian ? QLocale(QLocale::Russian, QLocale::Russia)

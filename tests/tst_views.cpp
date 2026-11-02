@@ -296,6 +296,9 @@ private slots:
 
     void germanSegmentSwitchesTheInterface()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         Rig rig;
         rig.settings.setLanguage(QStringLiteral("en"));
         Translations translations(&rig.settings);
@@ -316,6 +319,43 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 1)));
         QCOMPARE(rig.settings.language(), QStringLiteral("en"));
         QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
+    }
+
+    void disabledGermanIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
+        Translations::setLanguageEnabled(QStringLiteral("de"), true);
+        Rig rig;
+        rig.settings.setLanguage(QStringLiteral("de"));
+        Translations translations(&rig.settings);
+        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
+        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        QVERIFY(pages);
+        pages->setProperty("page", 4);
+        Rig::settle();
+
+        Translations::setLanguageEnabled(QStringLiteral("de"), false);
+        Rig::settle();
+        rig.render();
+
+        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
+        QCOMPARE(rig.errors.message(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
+
+        auto *selection = pages->findChild<QQuickItem *>(QStringLiteral("languageSelection"));
+        QVERIFY(selection);
+        QCOMPARE(selection->property("currentIndex").toInt(), 1);
+
+        QQmlListReference segments(selection, "segments");
+        QCOMPARE(segments.count(), 4);
+        QObject *germanSegment = segments.at(3);
+        QVERIFY(germanSegment);
+        QCOMPARE(germanSegment->property("enabled").toBool(), false);
+        QCOMPARE(germanSegment->property("tooltip").toString(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers"));
     }
 
     void disabledLanguageIsGrayedOutWithTooltipAndSwitchesBackToEnglish()

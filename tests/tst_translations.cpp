@@ -130,6 +130,9 @@ private slots:
 
     void germanCatalogIsEmbeddedAndValid()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         QFile file(QStringLiteral(":/translations/de.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QJsonParseError error;
@@ -149,6 +152,9 @@ private slots:
 
     void switchesLiveToGermanAndBack()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         QTemporaryDir directory;
         Settings settings(directory.filePath(QStringLiteral("settings.ini")));
         settings.setLanguage(QStringLiteral("en"));
@@ -184,6 +190,9 @@ private slots:
 
     void germanPluralForms()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         QFETCH(QString, source);
         QFETCH(int, count);
         QFETCH(QString, expected);
@@ -196,6 +205,9 @@ private slots:
 
     void germanTranslatesFormattedErrorsWithoutChangingMetadata()
     {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
         QTemporaryDir directory;
         Settings settings(directory.filePath(QStringLiteral("settings.ini")));
         settings.setLanguage(QStringLiteral("de"));
@@ -217,6 +229,30 @@ private slots:
             raw.setValue(QStringLiteral("language"), QStringLiteral("ru"));
         }
         Translations::setLanguageEnabled(QStringLiteral("ru"), false);
+        ErrorCenter errors(nullptr);
+        Settings settings(path);
+        Translations translations(&settings);
+        QCOMPARE(settings.language(), QStringLiteral("en"));
+        QCOMPARE(errors.message(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
+        QCOMPARE(QCoreApplication::translate("test", "Settings"), QStringLiteral("Settings"));
+
+        errors.clear();
+        Settings reopened(path);
+        QCOMPARE(reopened.language(), QStringLiteral("en"));
+        QVERIFY(errors.message().isEmpty());
+    }
+
+    void disabledGermanFallsBackToEnglishAndShowsError()
+    {
+        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("settings.ini"));
+        {
+            QSettings raw(path, QSettings::IniFormat);
+            raw.setValue(QStringLiteral("language"), QStringLiteral("de"));
+        }
+        Translations::setLanguageEnabled(QStringLiteral("de"), false);
         ErrorCenter errors(nullptr);
         Settings settings(path);
         Translations translations(&settings);
