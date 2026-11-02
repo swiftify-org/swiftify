@@ -205,7 +205,7 @@ void Settings::load()
     }
     const QString configuredLanguage = oneOf(
         stored<QString>(m_store, "language", m_language),
-        {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru")},
+        {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru"), QStringLiteral("de")},
         QStringLiteral("system"));
     if (!Translations::isLanguageEnabled(configuredLanguage)) {
         m_language = QStringLiteral("en");
@@ -615,7 +615,7 @@ void Settings::setDiscordApplicationId(const QString &raw)
 }
 void Settings::setLanguage(const QString &raw)
 {
-    QString value = oneOf(raw, {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru")}, QStringLiteral("system"));
+    QString value = oneOf(raw, {QStringLiteral("system"), QStringLiteral("en"), QStringLiteral("ru"), QStringLiteral("de")}, QStringLiteral("system"));
     if (!Translations::isLanguageEnabled(value)) {
         value = QStringLiteral("en");
     }

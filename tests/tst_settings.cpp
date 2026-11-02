@@ -75,6 +75,22 @@ private slots:
         QCOMPARE(reopened.language(), QStringLiteral("system"));
     }
 
+    void germanLanguagePreferencePersists()
+    {
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("swiftify.conf"));
+        {
+            Settings settings(path);
+            QSignalSpy language(&settings, &Settings::languageChanged);
+            settings.setLanguage(QStringLiteral("de"));
+            settings.setLanguage(QStringLiteral("de"));
+            QCOMPARE(language.count(), 1);
+        }
+        Settings reopened(path);
+        QCOMPARE(reopened.language(), QStringLiteral("de"));
+        QVERIFY(reopened.isLanguageEnabled(QStringLiteral("de")));
+    }
+
     void loggingPreferencePersists()
     {
         QTemporaryDir directory;

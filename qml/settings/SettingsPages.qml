@@ -381,7 +381,7 @@ Item {
                 ConfigSelection {
                     text: qsTr("Interface language")
                     objectName: "languageSelection"
-                    currentIndex: ["system", "en", "ru"].indexOf(Settings.language)
+                    currentIndex: ["system", "en", "ru", "de"].indexOf(Settings.language)
                     segments: [
                         Segment { text: qsTr("System") },
                         Segment { text: "English" },
@@ -389,9 +389,10 @@ Item {
                             text: "Русский"
                             enabled: Settings.russianEnabled
                             tooltip: Settings.russianEnabled ? "" : Settings.disabledLanguageMessage
-                        }
+                        },
+                        Segment { text: "Deutsch" }
                     ]
-                    onActivated: (index) => Settings.language = ["system", "en", "ru"][index]
+                    onActivated: (index) => Settings.language = ["system", "en", "ru", "de"][index]
                 }
             }
 

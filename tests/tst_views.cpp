@@ -294,6 +294,30 @@ private slots:
         QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
     }
 
+    void germanSegmentSwitchesTheInterface()
+    {
+        Rig rig;
+        rig.settings.setLanguage(QStringLiteral("en"));
+        Translations translations(&rig.settings);
+        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
+        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        QVERIFY(pages);
+        pages->setProperty("page", 4);
+        auto *selection = pages->findChild<QObject *>(QStringLiteral("languageSelection"));
+        QVERIFY(selection);
+        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 3)));
+        QCOMPARE(rig.settings.language(), QStringLiteral("de"));
+        QCOMPARE(selection->property("text").toString(), QStringLiteral("Sprache der Oberfläche"));
+        for (int page = 0; page < 8; ++page) {
+            pages->setProperty("page", page);
+            Rig::settle();
+            QVERIFY(!rig.render().isNull());
+        }
+        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 1)));
+        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
+        QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
+    }
+
     void disabledLanguageIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
     {
         const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
@@ -320,7 +344,7 @@ private slots:
         QCOMPARE(selection->property("currentIndex").toInt(), 1);
 
         QQmlListReference segments(selection, "segments");
-        QCOMPARE(segments.count(), 3);
+        QCOMPARE(segments.count(), 4);
         QObject *russianSegment = segments.at(2);
         QVERIFY(russianSegment);
         QCOMPARE(russianSegment->property("enabled").toBool(), false);
