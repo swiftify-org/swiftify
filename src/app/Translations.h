@@ -30,8 +30,9 @@ namespace swiftify {
 
 class Settings;
 
-///set to false to disable russian translations. this skips tests and disables the option inside of the settings
+///set to false to disable respective translations. this skips tests and disables the option inside of the settings
 inline constexpr bool kRussianTranslationEnabled = true;
+inline constexpr bool kGermanTranslationEnabled = true;
 
 /// Uses Qt's normal qsTr/tr bindings; the small UTF-8 catalog is embedded so
 /// building translations doesn't require an additional Linguist installation.
@@ -42,7 +43,7 @@ public:
     ~Translations() override;
     QString translate(const char *context, const char *sourceText,
                       const char *disambiguation = nullptr, int n = -1) const override;
-    bool isEmpty() const override { return m_catalog.isEmpty(); }
+    bool isEmpty() const override { return m_russian.entries.isEmpty() && m_german.entries.isEmpty(); }
 
     static bool isLanguageEnabled(QStringView language);
     static void setLanguageEnabled(QStringView language, bool enabled);
@@ -54,17 +55,22 @@ signals:
     void languageChanged();
 
 private:
-    void apply();
-    QString translatedMessage(const QString &source, int depth = 0) const;
     struct MessagePattern {
         QRegularExpression expression;
         QList<int> arguments;
         QString translation;
     };
+    struct Catalog {
+        QJsonObject entries;
+        QList<MessagePattern> patterns;
+    };
+    static void loadCatalog(const QString &resource, Catalog &catalog);
+    void apply();
+    QString translatedMessage(const QString &source, int depth = 0) const;
     Settings *m_settings;
-    QJsonObject m_catalog;
-    QList<MessagePattern> m_patterns;
-    bool m_russian = false;
+    Catalog m_russian;
+    Catalog m_german;
+    const Catalog *m_active = nullptr;
     QLocale m_previousLocale;
 };
 

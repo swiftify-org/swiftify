@@ -32,12 +32,16 @@ namespace swiftify {
 
 namespace {
 bool s_russianEnabled = kRussianTranslationEnabled;
+bool s_germanEnabled = kGermanTranslationEnabled;
 } // namespace
 
 bool Translations::isLanguageEnabled(QStringView language)
 {
     if (language == QLatin1StringView("ru")) {
         return s_russianEnabled;
+    }
+    if (language == QLatin1StringView("de")) {
+        return s_germanEnabled;
     }
     return true;
 }
@@ -52,12 +56,21 @@ void Translations::setLanguageEnabled(QStringView language, bool enabled)
         if (auto *settings = Settings::instance()) {
             settings->enforceEnabledLanguage();
         }
+    } else if (language == QLatin1StringView("de")) {
+        if (s_germanEnabled == enabled) {
+            return;
+        }
+        s_germanEnabled = enabled;
+        if (auto *settings = Settings::instance()) {
+            settings->enforceEnabledLanguage();
+        }
     }
 }
 
 void Translations::resetLanguageEnabled()
 {
     setLanguageEnabled(QStringLiteral("ru"), kRussianTranslationEnabled);
+    setLanguageEnabled(QStringLiteral("de"), kGermanTranslationEnabled);
 }
 
 QString Translations::disabledLanguageMessage()
@@ -70,17 +83,16 @@ QString Translations::disabledLanguageErrorMessage()
     return QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english.");
 }
 
-Translations::Translations(Settings *settings, QObject *parent)
-    : QTranslator(parent), m_settings(settings)
+void Translations::loadCatalog(const QString &resource, Catalog &catalog)
 {
-    QFile file(QStringLiteral(":/translations/ru.json"));
+    QFile file(resource);
     if (file.open(QIODevice::ReadOnly)) {
-        m_catalog = QJsonDocument::fromJson(file.readAll()).object();
+        catalog.entries = QJsonDocument::fromJson(file.readAll()).object();
     }
     // Status/error strings can already contain paths, codes or other details
     // when QML receives them. Match catalog templates without translating metadata.
     const QRegularExpression placeholder(QStringLiteral("%([1-9]\\d*)"));
-    for (auto it = m_catalog.begin(); it != m_catalog.end(); ++it) {
+    for (auto it = catalog.entries.begin(); it != catalog.entries.end(); ++it) {
         if (!it.value().isString() || !it.key().contains(placeholder)) continue;
         QString pattern = QStringLiteral("\\A");
         qsizetype position = 0;
@@ -94,12 +106,19 @@ Translations::Translations(Settings *settings, QObject *parent)
             position = match.capturedEnd();
         }
         pattern += QRegularExpression::escape(it.key().mid(position)) + QStringLiteral("\\z");
-        m_patterns.append({QRegularExpression(pattern, QRegularExpression::DotMatchesEverythingOption),
-                           arguments, it.value().toString()});
+        catalog.patterns.append({QRegularExpression(pattern, QRegularExpression::DotMatchesEverythingOption),
+                                 arguments, it.value().toString()});
     }
-    std::sort(m_patterns.begin(), m_patterns.end(), [](const auto &a, const auto &b) {
+    std::sort(catalog.patterns.begin(), catalog.patterns.end(), [](const auto &a, const auto &b) {
         return a.expression.pattern().size() > b.expression.pattern().size();
     });
+}
+
+Translations::Translations(Settings *settings, QObject *parent)
+    : QTranslator(parent), m_settings(settings)
+{
+    loadCatalog(QStringLiteral(":/translations/ru.json"), m_russian);
+    loadCatalog(QStringLiteral(":/translations/de.json"), m_german);
     connect(settings, &Settings::languageChanged, this, &Translations::apply);
     connect(settings, &Settings::languageAvailabilityChanged, this, &Translations::apply);
     apply();
@@ -123,23 +142,32 @@ void Translations::apply()
         }
     }
     const QString language = m_settings->language();
-    m_russian = isLanguageEnabled(QStringLiteral("ru"))
-        && (language == QLatin1StringView("ru")
-            || (language == QLatin1StringView("system") && QLocale::system().language() == QLocale::Russian));
-    QLocale::setDefault(m_russian ? QLocale(QLocale::Russian, QLocale::Russia)
-                                 : language == QLatin1StringView("en") ? QLocale(QLocale::English, QLocale::UnitedStates)
-                                                                      : QLocale::system());
-    if (m_russian) QCoreApplication::installTranslator(this);
+    const bool followSystem = language == QLatin1StringView("system");
+    const QLocale::Language systemLanguage = QLocale::system().language();
+    m_active = nullptr;
+    if (isLanguageEnabled(QStringLiteral("ru"))
+        && (language == QLatin1StringView("ru") || (followSystem && systemLanguage == QLocale::Russian))) {
+        m_active = &m_russian;
+    } else if (isLanguageEnabled(QStringLiteral("de"))
+               && (language == QLatin1StringView("de") || (followSystem && systemLanguage == QLocale::German))) {
+        m_active = &m_german;
+    }
+    QLocale::setDefault(m_active == &m_russian ? QLocale(QLocale::Russian, QLocale::Russia)
+                        : m_active == &m_german ? QLocale(QLocale::German, QLocale::Germany)
+                        : language == QLatin1StringView("en") ? QLocale(QLocale::English, QLocale::UnitedStates)
+                                                              : QLocale::system());
+    if (m_active) QCoreApplication::installTranslator(this);
     emit languageChanged();
 }
 
 QString Translations::translatedMessage(const QString &source, int depth) const
 {
-    const auto value = m_catalog.value(source);
+    if (!m_active) return {};
+    const auto value = m_active->entries.value(source);
     if (value.isString()) return value.toString();
     if (depth >= 4) return {};
     const QRegularExpression placeholder(QStringLiteral("%([1-9]\\d*)"));
-    for (const auto &pattern : m_patterns) {
+    for (const auto &pattern : m_active->patterns) {
         const auto match = pattern.expression.match(source);
         if (!match.hasMatch()) continue;
         QString result;
@@ -162,10 +190,12 @@ QString Translations::translatedMessage(const QString &source, int depth) const
 
 QString Translations::translate(const char *context, const char *sourceText, const char *, int n) const
 {
-    if (!m_russian || !sourceText) return {};
-    const auto value = m_catalog.value(QString::fromUtf8(sourceText));
+    if (!m_active || !sourceText) return {};
+    const auto value = m_active->entries.value(QString::fromUtf8(sourceText));
     if (value.isArray() && n >= 0) {
-        const int form = n % 10 == 1 && n % 100 != 11 ? 0
+        // German has two forms (one, other); Russian has three (one, few, many).
+        const int form = m_active == &m_german ? (n == 1 ? 0 : 1)
+            : n % 10 == 1 && n % 100 != 11 ? 0
             : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 1 : 2;
         return value.toArray().at(form).toString();
     }

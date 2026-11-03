@@ -294,6 +294,70 @@ private slots:
         QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
     }
 
+    void germanSegmentSwitchesTheInterface()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        Rig rig;
+        rig.settings.setLanguage(QStringLiteral("en"));
+        Translations translations(&rig.settings);
+        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
+        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        QVERIFY(pages);
+        pages->setProperty("page", 4);
+        auto *selection = pages->findChild<QObject *>(QStringLiteral("languageSelection"));
+        QVERIFY(selection);
+        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 3)));
+        QCOMPARE(rig.settings.language(), QStringLiteral("de"));
+        QCOMPARE(selection->property("text").toString(), QStringLiteral("Sprache der Oberfläche"));
+        for (int page = 0; page < 8; ++page) {
+            pages->setProperty("page", page);
+            Rig::settle();
+            QVERIFY(!rig.render().isNull());
+        }
+        QVERIFY(QMetaObject::invokeMethod(selection, "activated", Q_ARG(int, 1)));
+        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
+        QCOMPARE(selection->property("text").toString(), QStringLiteral("Interface language"));
+    }
+
+    void disabledGermanIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
+        Translations::setLanguageEnabled(QStringLiteral("de"), true);
+        Rig rig;
+        rig.settings.setLanguage(QStringLiteral("de"));
+        Translations translations(&rig.settings);
+        connect(&translations, &Translations::languageChanged, &rig.engine, &QQmlEngine::retranslate);
+        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        QVERIFY(pages);
+        pages->setProperty("page", 4);
+        Rig::settle();
+
+        Translations::setLanguageEnabled(QStringLiteral("de"), false);
+        Rig::settle();
+        rig.render();
+
+        QCOMPARE(rig.settings.language(), QStringLiteral("en"));
+        QCOMPARE(rig.errors.message(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
+
+        auto *selection = pages->findChild<QQuickItem *>(QStringLiteral("languageSelection"));
+        QVERIFY(selection);
+        QCOMPARE(selection->property("currentIndex").toInt(), 1);
+
+        QQmlListReference segments(selection, "segments");
+        QCOMPARE(segments.count(), 4);
+        QObject *germanSegment = segments.at(3);
+        QVERIFY(germanSegment);
+        QCOMPARE(germanSegment->property("enabled").toBool(), false);
+        QCOMPARE(germanSegment->property("tooltip").toString(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers"));
+    }
+
     void disabledLanguageIsGrayedOutWithTooltipAndSwitchesBackToEnglish()
     {
         const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
@@ -320,7 +384,7 @@ private slots:
         QCOMPARE(selection->property("currentIndex").toInt(), 1);
 
         QQmlListReference segments(selection, "segments");
-        QCOMPARE(segments.count(), 3);
+        QCOMPARE(segments.count(), 4);
         QObject *russianSegment = segments.at(2);
         QVERIFY(russianSegment);
         QCOMPARE(russianSegment->property("enabled").toBool(), false);

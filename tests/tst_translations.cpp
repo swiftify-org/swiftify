@@ -128,6 +128,97 @@ private slots:
         QCOMPARE(QCoreApplication::translate("Format", "%n songs", nullptr, count), expected);
     }
 
+    void germanCatalogIsEmbeddedAndValid()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        QFile file(QStringLiteral(":/translations/de.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+        QCOMPARE(error.error, QJsonParseError::NoError);
+        const auto catalog = document.object();
+        QVERIFY(catalog.size() > 300);
+        for (auto it = catalog.begin(); it != catalog.end(); ++it) {
+            if (it.value().isArray()) {
+                QCOMPARE(it.value().toArray().size(), 2);
+                for (const auto &value : it.value().toArray()) QVERIFY(!value.toString().isEmpty());
+            } else {
+                QVERIFY2(!it.value().toString().isEmpty(), qPrintable(it.key()));
+            }
+        }
+    }
+
+    void switchesLiveToGermanAndBack()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        QTemporaryDir directory;
+        Settings settings(directory.filePath(QStringLiteral("settings.ini")));
+        settings.setLanguage(QStringLiteral("en"));
+        Translations translations(&settings);
+        QQmlEngine engine;
+        connect(&translations, &Translations::languageChanged, &engine, &QQmlEngine::retranslate);
+        QQmlComponent component(&engine);
+        component.setData("import QtQml\nQtObject { property string label: qsTr(\"Settings\") }", QUrl());
+        std::unique_ptr<QObject> object(component.create());
+        QVERIFY2(object, qPrintable(component.errorString()));
+        QCOMPARE(object->property("label").toString(), QStringLiteral("Settings"));
+        settings.setLanguage(QStringLiteral("de"));
+        QCOMPARE(object->property("label").toString(), QStringLiteral("Einstellungen"));
+        QCOMPARE(QCoreApplication::translate("test", "custom playlist"), QStringLiteral("custom playlist"));
+        settings.setLanguage(QStringLiteral("en"));
+        QCOMPARE(object->property("label").toString(), QStringLiteral("Settings"));
+    }
+
+    void germanPluralForms_data()
+    {
+        QTest::addColumn<QString>("source");
+        QTest::addColumn<int>("count");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("songs-zero") << QStringLiteral("%n songs") << 0 << QStringLiteral("0 Titel");
+        QTest::newRow("songs-one") << QStringLiteral("%n songs") << 1 << QStringLiteral("1 Titel");
+        QTest::newRow("songs-two") << QStringLiteral("%n songs") << 2 << QStringLiteral("2 Titel");
+        QTest::newRow("plays-zero") << QStringLiteral("%n plays") << 0 << QStringLiteral("0 Wiedergaben");
+        QTest::newRow("plays-one") << QStringLiteral("%n plays") << 1 << QStringLiteral("1 Wiedergabe");
+        QTest::newRow("plays-five") << QStringLiteral("%n plays") << 5 << QStringLiteral("5 Wiedergaben");
+        QTest::newRow("days-one") << QStringLiteral("%n days") << 1 << QStringLiteral("1 Tag");
+        QTest::newRow("days-three") << QStringLiteral("%n days") << 3 << QStringLiteral("3 Tage");
+    }
+
+    void germanPluralForms()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        QFETCH(QString, source);
+        QFETCH(int, count);
+        QFETCH(QString, expected);
+        QTemporaryDir directory;
+        Settings settings(directory.filePath(QStringLiteral("settings.ini")));
+        settings.setLanguage(QStringLiteral("de"));
+        Translations translations(&settings);
+        QCOMPARE(QCoreApplication::translate("Format", source.toUtf8().constData(), nullptr, count), expected);
+    }
+
+    void germanTranslatesFormattedErrorsWithoutChangingMetadata()
+    {
+        if (!kGermanTranslationEnabled) {
+            QSKIP("German translation is disabled.");
+        }
+        QTemporaryDir directory;
+        Settings settings(directory.filePath(QStringLiteral("settings.ini")));
+        settings.setLanguage(QStringLiteral("de"));
+        Translations translations(&settings);
+        QCOMPARE(QCoreApplication::translate("Errors", "Spotify API request failed: /Users/test/Music"),
+                 QStringLiteral("Spotify-API-Anfrage fehlgeschlagen: /Users/test/Music"));
+        QCOMPARE(QCoreApplication::translate("Errors", "custom playlist"), QStringLiteral("custom playlist"));
+        QCOMPARE(QCoreApplication::translate("metadata", "Could not create a playlist"),
+                 QStringLiteral("Could not create a playlist"));
+    }
+
     void disabledLanguageFallsBackToEnglishAndShowsError()
     {
         const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
@@ -138,6 +229,30 @@ private slots:
             raw.setValue(QStringLiteral("language"), QStringLiteral("ru"));
         }
         Translations::setLanguageEnabled(QStringLiteral("ru"), false);
+        ErrorCenter errors(nullptr);
+        Settings settings(path);
+        Translations translations(&settings);
+        QCOMPARE(settings.language(), QStringLiteral("en"));
+        QCOMPARE(errors.message(),
+                 QStringLiteral("this language is currently disabled due to missing language maintainers. your app language has been switched back to english."));
+        QCOMPARE(QCoreApplication::translate("test", "Settings"), QStringLiteral("Settings"));
+
+        errors.clear();
+        Settings reopened(path);
+        QCOMPARE(reopened.language(), QStringLiteral("en"));
+        QVERIFY(errors.message().isEmpty());
+    }
+
+    void disabledGermanFallsBackToEnglishAndShowsError()
+    {
+        const auto restore = qScopeGuard([] { Translations::resetLanguageEnabled(); });
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("settings.ini"));
+        {
+            QSettings raw(path, QSettings::IniFormat);
+            raw.setValue(QStringLiteral("language"), QStringLiteral("de"));
+        }
+        Translations::setLanguageEnabled(QStringLiteral("de"), false);
         ErrorCenter errors(nullptr);
         Settings settings(path);
         Translations translations(&settings);

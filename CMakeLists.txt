@@ -266,7 +266,7 @@ qt_add_library(swiftify_app STATIC)
 qt_add_resources(swiftify_app "swiftify_translations"
     PREFIX "/translations"
     BASE translations
-    FILES translations/ru.json)
+    FILES translations/ru.json translations/de.json)
 qt_add_qml_module(swiftify_app
     URI Swiftify
     VERSION 1.0

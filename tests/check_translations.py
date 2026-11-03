@@ -39,22 +39,13 @@ def unique_object(pairs):
     return result
 
 
-if not is_language_enabled("kRussianTranslationEnabled"):
-    print("Skipped Russian translations (disabled in src/app/Translations.h).")
-    raise SystemExit(0)
+# (name, catalog file, number of plural forms, enable flag in Translations.h)
+languages = [
+    ("Russian", "translations/ru.json", 3, "kRussianTranslationEnabled"),
+    ("German", "translations/de.json", 2, "kGermanTranslationEnabled"),
+]
 
-catalog = json.loads((root / "translations/ru.json").read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-for source, translated in catalog.items():
-    forms = translated if isinstance(translated, list) else [translated]
-    if isinstance(translated, list):
-        assert len(forms) == 3, source
-    for form in forms:
-        assert isinstance(form, str) and form.strip(), source
-        assert sorted(re.findall(r"%(?:n|[1-9]\d*)", source)) == sorted(
-            re.findall(r"%(?:n|[1-9]\d*)", form)
-        ), f"Placeholders differ: {source}"
-
-missing = []
+sources = []
 literal = r'"(?:[^"\\]|\\.)*"'
 for path in list((root / "qml").rglob("*.qml")) + list((root / "src").rglob("*.cpp")):
     text = path.read_text(encoding="utf-8")
@@ -62,9 +53,25 @@ for path in list((root / "qml").rglob("*.qml")) + list((root / "src").rglob("*.c
                 rf'\b(?:qsTranslate|QCoreApplication::translate)\(\s*{literal}\s*,\s*({literal})']
     for pattern in patterns:
         for match in re.finditer(pattern, text):
-            source = json.loads(match.group(1))
-            if source not in catalog:
-                missing.append(f"{path.relative_to(root)}: {source}")
-if missing:
-    raise SystemExit("Missing Russian translations:\n" + "\n".join(missing))
-print(f"Validated {len(catalog)} Russian translations and QML/C++ coverage.")
+            sources.append((path.relative_to(root), json.loads(match.group(1))))
+
+for name, catalog_path, plural_forms, flag in languages:
+    if flag is not None and not is_language_enabled(flag):
+        print(f"Skipped {name} translations (disabled in src/app/Translations.h).")
+        continue
+
+    catalog = json.loads((root / catalog_path).read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    for source, translated in catalog.items():
+        forms = translated if isinstance(translated, list) else [translated]
+        if isinstance(translated, list):
+            assert len(forms) == plural_forms, f"{name}: expected {plural_forms} plural forms: {source}"
+        for form in forms:
+            assert isinstance(form, str) and form.strip(), f"{name}: empty translation: {source}"
+            assert sorted(re.findall(r"%(?:n|[1-9]\d*)", source)) == sorted(
+                re.findall(r"%(?:n|[1-9]\d*)", form)
+            ), f"{name}: placeholders differ: {source}"
+
+    missing = [f"{path}: {source}" for path, source in sources if source not in catalog]
+    if missing:
+        raise SystemExit(f"Missing {name} translations:\n" + "\n".join(missing))
+    print(f"Validated {len(catalog)} {name} translations and QML/C++ coverage.")
