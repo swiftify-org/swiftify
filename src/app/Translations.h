@@ -30,10 +30,8 @@ namespace swiftify {
 
 class Settings;
 
-///set to false to disable russian translations. this skips tests and disables the option inside of the settings
+///set to false to disable respective translations. this skips tests and disables the option inside of the settings
 inline constexpr bool kRussianTranslationEnabled = true;
-
-///set to false to disable german translations. this skips tests and disables the option inside of the settings
 inline constexpr bool kGermanTranslationEnabled = true;
 
 /// Uses Qt's normal qsTr/tr bindings; the small UTF-8 catalog is embedded so
