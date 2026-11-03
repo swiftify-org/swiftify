@@ -19,7 +19,7 @@
 #pragma once
 
 #include "theme/MaterialScheme.h"
-#include "theme/CustomThemes.h
+#include "theme/CustomThemes.h"
 #include "theme/Themes.h"
 
 #include <QColor>
