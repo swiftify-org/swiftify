@@ -410,6 +410,7 @@ Item {
                     ]
                     onActivated: (index) => Settings.themeMode = ["system", "light", "dark"][index]
                 }
+                ThemeStudio {}
 
                 Flow {
                     x: 8
@@ -419,7 +420,8 @@ Item {
                     bottomPadding: 10
 
                     Repeater {
-                        model: Theme.themeOptions(Theme.dark)
+                        // a saved or deleted custom theme changes the list
+                        model: Theme.customThemes.revision >= 0 ? Theme.themeOptions(Theme.dark) : []
 
                         delegate: ThemeSwatch {
                             required property themeOption modelData

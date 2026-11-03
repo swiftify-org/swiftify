@@ -110,6 +110,8 @@ public:
     void setValue(const QString &key, const QVariant &value);
     void remove(const QString &key);
     bool contains(const QString &key) const;
+    /// the settings file, which the person's other files (custom themes) sit beside
+    QString filePath() const { return m_store.fileName(); }
     void sync();
 
     /// every audio visualizer in the app
