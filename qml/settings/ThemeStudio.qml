@@ -18,6 +18,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Dialogs
 import Swiftify
 
 // the theme studio: the person's own themes, edited with the whole app as the
@@ -28,6 +29,7 @@ Column {
     readonly property var store: Theme.customThemes
     readonly property bool dark: Theme.dark
     property string pendingDelete
+    property string pendingExportId
 
     // Variant fields by what they colour; the on-colours and containers follow from them
     readonly property var groups: [
@@ -118,9 +120,8 @@ Column {
                         iconSize: 18
                         tooltip: qsTr("Export")
                         onClicked: {
-                            const ok = root.store.exportTheme(entry.modelData.id, filePath.text)
-                            root.report(ok)
-                            if (ok) UiState.toastRequested(qsTr("Exported"))
+                        root.pendingExportId = entry.modelData.id
+                        exportDialog.open()
                         }
                     }
                     IconButton {
@@ -137,12 +138,6 @@ Column {
             }
         }
 
-        OutlinedTextField {
-            id: filePath
-            x: 8
-            width: Math.min(460, parent.width - 16)
-            placeholder: qsTr("File or folder for import and export, e.g. ~/theme.json")
-        }
         Flow {
             x: 8
             width: parent.width - 16
@@ -159,11 +154,7 @@ Column {
                 variant: TextButton.Tonal
                 symbol: "download"
                 text: qsTr("Import")
-                onClicked: {
-                    const id = root.store.importTheme(filePath.text)
-                    root.report(id.length > 0)
-                    if (id.length > 0) UiState.toastRequested(qsTr("Imported"))
-                }
+                onClicked: importDialog.open()
             }
         }
         NoteText {
@@ -244,8 +235,10 @@ Column {
                 text: qsTr("Save and Use")
                 onClicked: {
                     const id = root.store.saveDraft()
+
                     if (id.length > 0) {
                         Settings.themeSource = id
+                        UiState.toastRequested(qsTr("Theme saved and applied"))
                     } else {
                         root.report(false)
                     }
@@ -327,5 +320,58 @@ Column {
         NoteText {
             text: qsTr("a warning only, saving is never blocked. 4.5:1 is the usual minimum for text, 3:1 for accents.")
         }
+    }
+        // Select an existing theme JSON file.
+    FileDialog {
+        id: importDialog
+
+        title: qsTr("Import Theme")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [
+            qsTr("Swiftify themes (*.json)"),
+            qsTr("All files (*)")
+        ]
+
+        onAccepted: {
+            const id = root.store.importThemeFromUrl(selectedFile)
+            root.report(id.length > 0)
+
+            if (id.length > 0) {
+                UiState.toastRequested(qsTr("Theme imported"))
+            }
+        }
+    }
+
+    // Choose the destination and filename for the exported theme.
+    FileDialog {
+    id: exportDialog
+
+    title: qsTr("Export Theme")
+    fileMode: FileDialog.SaveFile
+    nameFilters: [
+        qsTr("Swiftify themes (*.json)")
+    ]
+    defaultSuffix: "json"
+
+    options: FileDialog.DontConfirmOverwrite
+
+    onAccepted: {
+        const ok = root.store.exportThemeFromUrl(
+            root.pendingExportId,
+            selectedFile
+        )
+
+        root.report(ok)
+
+        if (ok) {
+            UiState.toastRequested(qsTr("Theme exported"))
+        }
+
+        root.pendingExportId = ""
+    }
+
+    onRejected: {
+        root.pendingExportId = ""
+    }
     }
 }

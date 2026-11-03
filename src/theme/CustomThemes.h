@@ -24,6 +24,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
@@ -85,6 +86,8 @@ public:
     Q_INVOKABLE bool exportTheme(const QString &id, const QString &path);
     /// the new theme's id, empty (see lastError) on failure
     Q_INVOKABLE QString importTheme(const QString &path);
+    Q_INVOKABLE bool exportThemeFromUrl(const QString &id, const QUrl &url);
+    Q_INVOKABLE QString importThemeFromUrl(const QUrl &url);
     /// "#rrggbb", lowercase, opaque
     Q_INVOKABLE static QString hex(const QColor &color);
     /// an invalid colour unless text is exactly six hex digits, # optional

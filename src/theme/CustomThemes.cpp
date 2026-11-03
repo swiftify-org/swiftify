@@ -79,11 +79,50 @@ const Field *fieldFor(const QString &key)
     return nullptr;
 }
 
-bool validId(const QString &id)
+QString themeIdFromFileName(const QString &baseName)
 {
+    // Supports both legacy custom-UUID.json and named theme files.
     static const QRegularExpression pattern(QStringLiteral(
-        "\\Acustom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\z"));
-    return pattern.match(id).hasMatch();
+        "(?:^|--)(custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"));
+
+    const auto match = pattern.match(baseName);
+    return match.hasMatch() ? match.captured(1) : QString();
+}
+
+QString themeFileName(const themes::Family &family)
+{
+    QString name = family.name.trimmed();
+
+    // Replace characters that are not allowed in Windows filenames.
+    static const QRegularExpression invalidCharacters(
+        QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1f]"));
+
+    name.replace(invalidCharacters, QStringLiteral("_"));
+
+    // Windows filenames cannot end with a dot or a space.
+    while (!name.isEmpty() && (name.endsWith(u'.') || name.endsWith(u' '))) {
+        name.chop(1);
+    }
+
+    if (name.isEmpty()) {
+        name = QStringLiteral("Theme");
+    }
+
+    return name + QStringLiteral("--") + family.id + QStringLiteral(".json");
+}
+
+QString themeFilePathForId(const QString &directory, const QString &id)
+{
+    const QDir dir(directory);
+
+    for (const QFileInfo &info : dir.entryInfoList(
+             {QStringLiteral("*.json")}, QDir::Files)) {
+        if (themeIdFromFileName(info.completeBaseName()) == id) {
+            return info.absoluteFilePath();
+        }
+    }
+
+    return {};
 }
 
 QString newId()
@@ -210,9 +249,10 @@ void CustomThemes::load()
     const QDir directory(m_directory);
     // a theme that will not load is skipped, never fatal: Theme falls back to the app's own colours
     for (const QFileInfo &info : directory.entryInfoList({QStringLiteral("*.json")}, QDir::Files | QDir::Readable)) {
-        const QString id = info.completeBaseName();
+        const QString id = themeIdFromFileName(info.completeBaseName());
         QString error;
-        if (!validId(id)) {
+
+        if (id.isEmpty()) {
             qCWarning(lcCustomThemes) << "skipping" << info.fileName() << ": not a theme file name";
         } else if (const auto family = readFile(info.absoluteFilePath(), id, error)) {
             m_families.append(*family);
@@ -308,7 +348,24 @@ bool CustomThemes::writeFile(const themes::Family &family)
     if (!QDir().mkpath(m_directory)) {
         return fail(tr("Could not create the themes folder"));
     }
-    return writeJson(m_directory + u'/' + family.id + QStringLiteral(".json"), family);
+
+    const QDir directory(m_directory);
+    const QString targetPath = directory.filePath(themeFileName(family));
+    const QString previousPath = themeFilePathForId(m_directory, family.id);
+
+    // Rename an existing theme file when its display name changes.
+    if (!previousPath.isEmpty() && previousPath != targetPath) {
+        if (QFileInfo::exists(targetPath)) {
+            return fail(tr("The theme file already exists: %1").arg(targetPath));
+        }
+
+        QFile previousFile(previousPath);
+        if (!previousFile.rename(targetPath)) {
+            return fail(tr("Could not rename the theme file"));
+        }
+    }
+
+    return writeJson(targetPath, family);
 }
 
 QString CustomThemes::addFamily(const themes::Family &family)
@@ -469,9 +526,12 @@ bool CustomThemes::remove(const QString &id)
     if (!find(id)) {
         return fail(tr("That theme does not exist"));
     }
-    if (!QFile::remove(m_directory + u'/' + id + QStringLiteral(".json"))) {
+    const QString filePath = themeFilePathForId(m_directory, id);
+
+    if (filePath.isEmpty() || !QFile::remove(filePath)) {
         return fail(tr("Could not delete the theme"));
     }
+
     m_families.removeIf([&](const themes::Family &family) { return family.id == id; });
     ++m_revision;
     const bool wasEditing = m_editing && m_draft.id == id;
@@ -523,6 +583,21 @@ bool CustomThemes::exportTheme(const QString &id, const QString &path)
     return writeJson(target, *family);
 }
 
+bool CustomThemes::exportThemeFromUrl(const QString &id, const QUrl &url)
+{
+    if (!url.isLocalFile()) {
+        return fail(tr("The selected export location is not a local file"));
+    }
+
+    const QString path = url.toLocalFile();
+
+    if (path.isEmpty()) {
+        return fail(tr("Choose a file to export to"));
+    }
+
+    return exportTheme(id, path);
+}
+
 QString CustomThemes::importTheme(const QString &path)
 {
     if (path.trimmed().isEmpty()) {
@@ -537,6 +612,23 @@ QString CustomThemes::importTheme(const QString &path)
         return {};
     }
     return writeFile(*family) ? addFamily(*family) : QString();
+}
+
+QString CustomThemes::importThemeFromUrl(const QUrl &url)
+{
+    if (!url.isLocalFile()) {
+        fail(tr("The selected import file is not a local file"));
+        return {};
+    }
+
+    const QString path = url.toLocalFile();
+
+    if (path.isEmpty()) {
+        fail(tr("Choose a file to import"));
+        return {};
+    }
+
+    return importTheme(path);
 }
 
 qreal CustomThemes::contrast(const QColor &a, const QColor &b)
