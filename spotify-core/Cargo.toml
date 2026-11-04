@@ -47,3 +47,4 @@ strip = "debuginfo"
 
 [patch.crates-io]
 librespot-core = { path = "vendor/librespot-core" }
+librespot-connect = { git = "https://github.com/heyilyyyyyyyy/librespot-connect.git", branch = "main" }

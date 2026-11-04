@@ -126,7 +126,7 @@ elseif(WIN32)
     # needs; the linker leaves out any of them nothing uses
     target_link_libraries(spotify_core INTERFACE
         ws2_32 userenv bcrypt ntdll advapi32 kernel32 user32 shell32 ole32 oleaut32
-        propsys crypt32 secur32 ncrypt runtimeobject synchronization)
+        propsys crypt32 secur32 ncrypt runtimeobject synchronization iphlpapi)
 else()
     find_package(ALSA REQUIRED)
     find_package(OpenSSL REQUIRED)

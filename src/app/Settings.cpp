@@ -145,6 +145,7 @@ void Settings::load()
         m_songCacheMegabytes = cache == 500 || cache == 2000 ? cache : 1000;
     }
     m_normalizeVolume = stored<bool>(m_store, "normalizeVolume", m_normalizeVolume);
+    m_spotifyConnectEnabled = stored<bool>(m_store, "spotifyConnectEnabled", m_spotifyConnectEnabled);
     m_crossfadeEnabled = stored<bool>(m_store, "crossfadeEnabled", m_crossfadeEnabled);
     m_crossfadeDurationSeconds = std::clamp(
         stored<int>(m_store, "crossfadeDurationSeconds", m_crossfadeDurationSeconds), 1, 12);
@@ -343,6 +344,16 @@ void Settings::setSongCacheMegabytes(int megabytes)
     m_songCacheMegabytes = value;
     m_store.setValue(QStringLiteral("songCacheMegabytes"), value);
     emit songCacheMegabytesChanged();
+}
+
+void Settings::setSpotifyConnectEnabled(bool value)
+{
+    if (m_spotifyConnectEnabled == value) {
+        return;
+    }
+    m_spotifyConnectEnabled = value;
+    m_store.setValue(QStringLiteral("spotifyConnectEnabled"), value);
+    emit spotifyConnectEnabledChanged();
 }
 
 void Settings::setCrossfadeEnabled(bool value)

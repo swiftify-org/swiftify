@@ -121,6 +121,13 @@ PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *sessi
     connect(m_core, &PlaybackCore::remoteTrackStarted, this, &PlaybackController::adoptRemoteSong);
     connect(m_core, &PlaybackCore::remotePlayingChanged, this, &PlaybackController::followRemotePlaying);
     connect(m_core, &PlaybackCore::remoteVolumeChanged, this, &PlaybackController::followRemoteVolume);
+    connect(m_core, &PlaybackCore::remoteSkipRequested, this, [this](bool forward) {
+        if (forward) {
+            skipForward();
+        } else {
+            skipBackward();
+        }
+    });
 }
 
 PlaybackController::~PlaybackController()
@@ -1217,7 +1224,7 @@ void PlaybackController::pollPlayback()
         return;
     }
     syncPositionAndDuration();
-    if (m_playing && !m_crossfadeStarted && m_settings->crossfadeEnabled() && m_currentSong
+    if (!m_remote && m_playing && !m_crossfadeStarted && m_settings->crossfadeEnabled() && m_currentSong
         && !m_currentSong->isLocalFile() && m_durationMs > 0) {
         std::optional<Song> next;
         bool recordHistory = true;

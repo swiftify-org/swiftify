@@ -1399,8 +1399,7 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b2a21e9e19b906c6676b1a515fc5529d5414f69049f5a167dfb2ea3206e5a27"
+source = "git+https://github.com/heyilyyyyyyyy/librespot-connect.git?branch=main#24affa6e51621e95181d4584ce1985c81076d836"
 dependencies = [
  "futures-util",
  "librespot-core",
