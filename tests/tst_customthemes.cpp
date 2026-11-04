@@ -135,9 +135,9 @@ private slots:
         QTest::newRow("not json") << QByteArray("{ nope");
         QTest::newRow("not an object") << QByteArray("[1, 2]");
         QTest::newRow("colour name") << QByteArray(R"({"schema":1,"name":"X","dark":{"primary":"red"}})");
-        QTest::newRow("short hex") << QByteArray(R"({"schema":1,"name":"X","dark":{"primary":"#abc"}})");
+        QTest::newRow("short hex") << QByteArrayLiteral("{\"schema\":1,\"name\":\"X\",\"dark\":{\"primary\":\"#abc\"}}");
         QTest::newRow("no hash") << QByteArray(R"({"schema":1,"name":"X","dark":{"primary":"aabbcc"}})");
-        QTest::newRow("alpha hex") << QByteArray(R"({"schema":1,"name":"X","dark":{"primary":"#aabbccdd"}})");
+        QTest::newRow("alpha hex") << QByteArrayLiteral("{\"schema\":1,\"name\":\"X\",\"dark\":{\"primary\":\"#aabbccdd\"}}");
         QTest::newRow("colour not a string") << QByteArray(R"({"schema":1,"name":"X","dark":{"primary":123}})");
         QTest::newRow("variant not an object") << QByteArray(R"({"schema":1,"name":"X","dark":[]})");
     }
@@ -155,7 +155,7 @@ private slots:
     {
         QTemporaryDir dir;
         QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("X"), kGoodId),
-                          R"({"schema":1,"name":"X","base":"nord","dark":{"primary":"#010203"},"unknown":1})"));
+                          QByteArrayLiteral("{\"schema\":1,\"name\":\"X\",\"base\":\"nord\",\"dark\":{\"primary\":\"#010203\"},\"unknown\":1}")));
         CustomThemes store(dir.path());
         const themes::Family *family = store.find(kGoodId);
         QVERIFY(family);
