@@ -29,6 +29,27 @@ class SettingsTest : public QObject {
     Q_OBJECT
 
 private slots:
+    void spotifyConnectIsOptInAndPersists()
+    {
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("swiftify.conf"));
+        {
+            Settings settings(path);
+            QVERIFY(!settings.spotifyConnectEnabled());
+            QSignalSpy changed(&settings, &Settings::spotifyConnectEnabledChanged);
+            settings.setSpotifyConnectEnabled(true);
+            settings.setSpotifyConnectEnabled(true);
+            QCOMPARE(changed.count(), 1);
+        }
+        {
+            Settings settings(path);
+            QVERIFY(settings.spotifyConnectEnabled());
+            settings.setSpotifyConnectEnabled(false);
+        }
+        Settings reopened(path);
+        QVERIFY(!reopened.spotifyConnectEnabled());
+    }
+
     void discordPreferencesPersist()
     {
         QTemporaryDir directory;

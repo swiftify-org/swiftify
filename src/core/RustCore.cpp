@@ -24,6 +24,9 @@
 
 #include <QCoroSignal>
 #include <QDebug>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -73,6 +76,8 @@ RustCore::RustCore(QObject *parent)
     : PlaybackCore(parent)
 {
     open();
+    m_connectEvents.setInterval(100);
+    connect(&m_connectEvents, &QTimer::timeout, this, &RustCore::drainConnectEvents);
 }
 
 RustCore::~RustCore()
@@ -115,10 +120,15 @@ void RustCore::open()
         swiftify_string_free(swiftify_core_set_audio_cache(m_core, m_cachePath.toUtf8().constData(),
                                                            quint64(std::max<qint64>(0, m_cacheBytes))));
     }
+    if (!m_connectDeviceId.isEmpty()) {
+        swiftify_string_free(swiftify_core_set_spotify_connect(m_core, m_connectEnabled,
+                                                              m_connectDeviceId.toUtf8().constData()));
+    }
 }
 
 void RustCore::close()
 {
+    m_connectEvents.stop();
 #ifdef Q_OS_WIN
     // waits for a callback under way, so none reaches this after
     swiftify_core_set_completion_callback(m_core, nullptr, nullptr);
@@ -182,22 +192,37 @@ QCoro::Task<QString> RustCore::request(Start start)
 
 QCoro::Task<QString> RustCore::connectSession(QString accessToken, QString clientId)
 {
+    const bool connectEnabled = m_connectEnabled;
     const QByteArray token = accessToken.toUtf8();
     const QByteArray client = clientId.toUtf8();
-    co_return co_await request(
+    const QString login = co_await request(
         [&](quint64 id) { swiftify_core_connect(m_core, id, token.constData(), client.constData()); });
+    if (connectEnabled) {
+        m_connectEvents.start();
+    } else {
+        m_connectEvents.stop();
+    }
+    co_return login;
 }
 
 QCoro::Task<QString> RustCore::connectStoredSession(QString login, QString clientId)
 {
+    const bool connectEnabled = m_connectEnabled;
     const QByteArray stored = login.toUtf8();
     const QByteArray client = clientId.toUtf8();
-    co_return co_await request(
+    const QString refreshed = co_await request(
         [&](quint64 id) { swiftify_core_connect_stored(m_core, id, stored.constData(), client.constData()); });
+    if (connectEnabled) {
+        m_connectEvents.start();
+    } else {
+        m_connectEvents.stop();
+    }
+    co_return refreshed;
 }
 
 void RustCore::disconnectSession()
 {
+    m_connectEvents.stop();
     swiftify_core_disconnect(m_core);
 }
 
@@ -272,6 +297,39 @@ void RustCore::setAudioCache(const QString &path, qint64 limitBytes)
     m_cachePath = path;
     m_cacheBytes = limitBytes;
     throwIfError(swiftify_core_set_audio_cache(m_core, path.toUtf8().constData(), quint64(std::max<qint64>(0, limitBytes))));
+}
+
+void RustCore::setSpotifyConnect(bool enabled, const QString &deviceId)
+{
+    m_connectEnabled = enabled;
+    m_connectDeviceId = deviceId;
+    throwIfError(swiftify_core_set_spotify_connect(m_core, enabled, deviceId.toUtf8().constData()));
+}
+
+bool RustCore::skipRemote(bool forward)
+{
+    return swiftify_core_skip_remote(m_core, forward);
+}
+
+void RustCore::drainConnectEvents()
+{
+    const auto events = QJsonDocument::fromJson(takeString(swiftify_core_take_connect_events(m_core)).toUtf8()).array();
+    for (const QJsonValue &value : events) {
+        const QJsonObject event = value.toObject();
+        const QString type = event.value(QStringLiteral("type")).toString();
+        if (type == QLatin1StringView("track")) {
+            const Song song = Song::fromJson(event.value(QStringLiteral("song")).toObject());
+            if (song.isValid()) {
+                emit remoteTrackStarted(song);
+            }
+        } else if (type == QLatin1StringView("playing")) {
+            emit remotePlayingChanged(event.value(QStringLiteral("playing")).toBool());
+        } else if (type == QLatin1StringView("volume")) {
+            emit remoteVolumeChanged(float(event.value(QStringLiteral("volume")).toDouble()));
+        } else if (type == QLatin1StringView("skip")) {
+            emit remoteSkipRequested(event.value(QStringLiteral("forward")).toBool());
+        }
+    }
 }
 
 void RustCore::setPlaybackShaping(float tempo, float pitchSemitones, bool preservesPitch)

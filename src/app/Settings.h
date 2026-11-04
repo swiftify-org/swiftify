@@ -50,6 +50,7 @@ class Settings : public QObject {
     Q_PROPERTY(double visualizerSensitivity READ visualizerSensitivity WRITE setVisualizerSensitivity NOTIFY visualizerSensitivityChanged FINAL)
     Q_PROPERTY(int streamingQuality READ streamingQuality WRITE setStreamingQuality NOTIFY streamingQualityChanged FINAL)
     Q_PROPERTY(bool normalizeVolume READ normalizeVolume WRITE setNormalizeVolume NOTIFY normalizeVolumeChanged FINAL)
+    Q_PROPERTY(bool spotifyConnectEnabled READ spotifyConnectEnabled WRITE setSpotifyConnectEnabled NOTIFY spotifyConnectEnabledChanged FINAL)
     Q_PROPERTY(bool crossfadeEnabled READ crossfadeEnabled WRITE setCrossfadeEnabled NOTIFY crossfadeEnabledChanged FINAL)
     Q_PROPERTY(int crossfadeDurationSeconds READ crossfadeDurationSeconds WRITE setCrossfadeDurationSeconds NOTIFY crossfadeDurationSecondsChanged FINAL)
     /// how much of the songs streamed is kept, so playing one again needs no
@@ -145,6 +146,8 @@ public:
     void setStreamingQuality(int value);
     bool normalizeVolume() const { return m_normalizeVolume; }
     void setNormalizeVolume(bool value);
+    bool spotifyConnectEnabled() const { return m_spotifyConnectEnabled; }
+    void setSpotifyConnectEnabled(bool value);
     bool crossfadeEnabled() const { return m_crossfadeEnabled; }
     void setCrossfadeEnabled(bool value);
     int crossfadeDurationSeconds() const { return m_crossfadeDurationSeconds; }
@@ -233,6 +236,7 @@ signals:
     void visualizerSensitivityChanged();
     void streamingQualityChanged();
     void normalizeVolumeChanged();
+    void spotifyConnectEnabledChanged();
     void crossfadeEnabledChanged();
     void crossfadeDurationSecondsChanged();
     void songCacheMegabytesChanged();
@@ -280,6 +284,7 @@ private:
     double m_visualizerSensitivity = 1.0;
     int m_streamingQuality = 160;
     bool m_normalizeVolume = false;
+    bool m_spotifyConnectEnabled = false;
     bool m_crossfadeEnabled = false;
     int m_crossfadeDurationSeconds = 5;
     int m_songCacheMegabytes = 1000;

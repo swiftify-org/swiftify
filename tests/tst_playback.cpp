@@ -296,6 +296,40 @@ private slots:
         QVERIFY(!rig.core.log.mid(logged).contains(QStringLiteral("skip next")));
     }
 
+    void connectSkipRequestsUseSwiftifysQueue()
+    {
+        Rig rig;
+        const auto songs = makeQueue(3);
+        rig.player.play(songs[1], songs);
+        rig.finishLoading();
+        emit rig.core.remoteSkipRequested(true);
+        rig.finishLoading();
+        QCOMPARE(rig.player.currentSong().uri, songs[2].uri);
+        emit rig.core.remoteSkipRequested(false);
+        rig.finishLoading();
+        QCOMPARE(rig.player.currentSong().uri, songs[1].uri);
+    }
+
+    void aRemoteContextIsNotCrossfadedBySwiftifysRepeatPolicy()
+    {
+        Rig rig;
+        rig.settings.setCrossfadeEnabled(true);
+        Song picked;
+        picked.name = QStringLiteral("Remote context");
+        picked.uri = QStringLiteral("spotify:track:elsewhere");
+        picked.durationMs = 180'000;
+        rig.core.remote = true;
+        emit rig.core.remoteTrackStarted(picked);
+        rig.player.cycleRepeatMode();
+        rig.player.cycleRepeatMode();
+        QCOMPARE(rig.player.repeatMode(), PlaybackController::RepeatMode::One);
+        rig.core.duration = 180'000;
+        rig.core.position = 177'000;
+        QTest::qWait(400);
+        QVERIFY(!rig.core.take(QStringLiteral("crossfadeTrack")));
+        QCOMPARE(rig.player.currentSong().uri, picked.uri);
+    }
+
     void theQueueStepsOnWithoutAReset()
     {
         Rig rig;

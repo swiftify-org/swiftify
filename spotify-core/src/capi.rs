@@ -587,6 +587,44 @@ fallible_call!(swiftify_core_seek(position_ms: u32) => |core| core.seek(position
 fallible_call!(swiftify_core_set_volume(volume: f32) => |core| core.set_volume(volume));
 fallible_call!(swiftify_core_set_stream_quality(kbps: u32) => |core| core.set_stream_quality(kbps));
 fallible_call!(swiftify_core_set_volume_normalization(enabled: bool) => |core| core.set_volume_normalization(enabled));
+
+/// Set the registration preference for the next session.
+///
+/// # Safety
+/// `core` is null or live; `device_id` is a nul-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_set_spotify_connect(
+    core: *const SwiftifyCore, enabled: bool, device_id: *const c_char,
+) -> *mut c_char {
+    // SAFETY: forwarded from the caller.
+    let Some(handle) = (unsafe { handle(core) }) else {
+        return into_raw(MISSING_CORE.to_owned());
+    };
+    // SAFETY: forwarded from the caller.
+    match unsafe { read_str(device_id) } {
+        Ok(id) => error_string(handle.core.set_spotify_connect(enabled, id)),
+        Err(error) => into_raw(error),
+    }
+}
+
+/// Drain remote events as JSON. Free the result with `swiftify_string_free`.
+///
+/// # Safety
+/// `core` is null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_take_connect_events(core: *const SwiftifyCore) -> *mut c_char {
+    // SAFETY: forwarded from the caller.
+    into_raw(unsafe { handle(core) }.map(|handle| handle.core.take_connect_events()).unwrap_or_else(|| "[]".into()))
+}
+
+/// # Safety
+/// `core` is null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_skip_remote(core: *const SwiftifyCore, forward: bool) -> bool {
+    // SAFETY: forwarded from the caller.
+    unsafe { handle(core) }.is_some_and(|handle| handle.core.skip_remote(forward))
+}
+
 /// keeps streamed songs in `path`, up to `limit_bytes`; an empty path keeps
 /// none. applies the next time playback connects. returns null on success, or
 /// an error message to free.
@@ -716,17 +754,26 @@ pub unsafe extern "C" fn swiftify_equalizer_frequencies(out: *mut f32, capacity:
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, time::Duration};
+    #[cfg(unix)]
+    use std::io::Read;
+    use std::time::Duration;
 
     use super::*;
 
     fn wait_for_completion(core: *const SwiftifyCore) -> (u64, bool, String) {
         let fd = unsafe { swiftify_core_completion_fd(core) };
+        #[cfg(unix)]
         assert!(fd >= 0);
+        #[cfg(not(unix))]
+        assert_eq!(fd, -1);
+        #[cfg(unix)]
         let reader = unsafe { &(&*core).completions.receiver };
         for _ in 0..200 {
-            let mut byte = [0; 16];
-            let _ = (&*reader).read(&mut byte);
+            #[cfg(unix)]
+            {
+                let mut byte = [0; 16];
+                let _ = (&*reader).read(&mut byte);
+            }
             let mut request_id = 0;
             let mut ok = true;
             let mut payload = ptr::null_mut();
@@ -742,6 +789,23 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("no completion arrived");
+    }
+
+    #[test]
+    fn connect_preference_and_event_ffi_are_safe_without_a_session() {
+        let core = swiftify_core_new();
+        let id = CString::new("ffi-connect-device").unwrap();
+        assert!(unsafe { swiftify_core_set_spotify_connect(core, true, id.as_ptr()) }.is_null());
+        let events = unsafe { swiftify_core_take_connect_events(core) };
+        assert_eq!(unsafe { CStr::from_ptr(events) }.to_str().unwrap(), "[]");
+        unsafe { swiftify_string_free(events) };
+        assert!(!unsafe { swiftify_core_skip_remote(core, true) });
+        assert!(unsafe { swiftify_core_set_spotify_connect(core, false, id.as_ptr()) }.is_null());
+        unsafe { swiftify_core_free(core) };
+        let events = unsafe { swiftify_core_take_connect_events(ptr::null()) };
+        assert_eq!(unsafe { CStr::from_ptr(events) }.to_str().unwrap(), "[]");
+        unsafe { swiftify_string_free(events) };
+        assert!(!unsafe { swiftify_core_skip_remote(ptr::null(), false) });
     }
 
     #[test]
