@@ -27,6 +27,7 @@
 #include <QLoggingCategory>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <QUuid>
 
 #include <algorithm>
@@ -81,9 +82,8 @@ const Field *fieldFor(const QString &key)
 
 QString themeIdFromFileName(const QString &baseName)
 {
-    // Supports both legacy custom-UUID.json and named theme files.
     static const QRegularExpression pattern(QStringLiteral(
-        "(?:^|--)(custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"));
+        "^.+--(custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"));
 
     const auto match = pattern.match(baseName);
     return match.hasMatch() ? match.captured(1) : QString();
@@ -93,7 +93,6 @@ QString themeFileName(const themes::Family &family)
 {
     QString name = family.name.trimmed();
 
-    // Replace characters that are not allowed in Windows filenames.
     static const QRegularExpression invalidCharacters(
         QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1f]"));
 
@@ -111,31 +110,24 @@ QString themeFileName(const themes::Family &family)
     return name + QStringLiteral("--") + family.id + QStringLiteral(".json");
 }
 
-QString themeFilePathForId(const QString &directory, const QString &id)
+QStringList themeFilePathsForId(const QString &directory, const QString &id)
 {
     const QDir dir(directory);
+    QStringList paths;
 
     for (const QFileInfo &info : dir.entryInfoList(
              {QStringLiteral("*.json")}, QDir::Files)) {
         if (themeIdFromFileName(info.completeBaseName()) == id) {
-            return info.absoluteFilePath();
+            paths.append(info.absoluteFilePath());
         }
     }
 
-    return {};
+    return paths;
 }
 
 QString newId()
 {
     return QStringLiteral("custom-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
-}
-
-QString expandedPath(QString path)
-{
-    path = path.trimmed();
-    if (path == QLatin1StringView("~")) path = QDir::homePath();
-    if (path.startsWith(QLatin1StringView("~/"))) path.replace(0, 1, QDir::homePath());
-    return QDir::cleanPath(path);
 }
 
 bool sameVariant(const themes::Variant &a, const themes::Variant &b)
@@ -247,15 +239,25 @@ void CustomThemes::load()
 {
     m_families.clear();
     const QDir directory(m_directory);
+    QFileInfoList files = directory.entryInfoList(
+        {QStringLiteral("*.json")}, QDir::Files | QDir::Readable);
+    std::sort(files.begin(), files.end(), [](const QFileInfo &a, const QFileInfo &b) {
+        return QString::compare(a.fileName(), b.fileName(), Qt::CaseSensitive) < 0;
+    });
+    QSet<QString> loadedIds;
+
     // a theme that will not load is skipped, never fatal: Theme falls back to the app's own colours
-    for (const QFileInfo &info : directory.entryInfoList({QStringLiteral("*.json")}, QDir::Files | QDir::Readable)) {
+    for (const QFileInfo &info : files) {
         const QString id = themeIdFromFileName(info.completeBaseName());
         QString error;
 
         if (id.isEmpty()) {
             qCWarning(lcCustomThemes) << "skipping" << info.fileName() << ": not a theme file name";
+        } else if (loadedIds.contains(id)) {
+            qCWarning(lcCustomThemes) << "skipping duplicate theme UUID in" << info.fileName();
         } else if (const auto family = readFile(info.absoluteFilePath(), id, error)) {
             m_families.append(*family);
+            loadedIds.insert(id);
         } else {
             qCWarning(lcCustomThemes) << "skipping" << info.fileName() << ":" << error;
         }
@@ -325,10 +327,8 @@ bool CustomThemes::writeJson(const QString &path, const themes::Family &family)
         return fail(tr("Could not write %1").arg(path));
     }
 
-    // Prepare the JSON data.
     const QByteArray data = QJsonDocument(object).toJson(QJsonDocument::Indented);
 
-    // Make sure all bytes were written successfully.
     if (file.write(data) != data.size()) {
         file.cancelWriting();
         return fail(tr("Could not write %1").arg(path));
@@ -350,22 +350,24 @@ bool CustomThemes::writeFile(const themes::Family &family)
     }
 
     const QDir directory(m_directory);
-    const QString targetPath = directory.filePath(themeFileName(family));
-    const QString previousPath = themeFilePathForId(m_directory, family.id);
+    const QString targetPath = directory.absoluteFilePath(themeFileName(family));
+    if (!writeJson(targetPath, family)) {
+        return false;
+    }
 
-    // Rename an existing theme file when its display name changes.
-    if (!previousPath.isEmpty() && previousPath != targetPath) {
-        if (QFileInfo::exists(targetPath)) {
-            return fail(tr("The theme file already exists: %1").arg(targetPath));
-        }
-
-        QFile previousFile(previousPath);
-        if (!previousFile.rename(targetPath)) {
-            return fail(tr("Could not rename the theme file"));
+    for (const QString &path : themeFilePathsForId(m_directory, family.id)) {
+        if (path != targetPath && !QFile::remove(path)) {
+            qCWarning(lcCustomThemes) << "could not remove old theme file" << path;
         }
     }
 
-    return writeJson(targetPath, family);
+    for (const QString &path : themeFilePathsForId(m_directory, family.id)) {
+        if (path != targetPath) {
+            return fail(tr("Could not delete the theme"));
+        }
+    }
+
+    return true;
 }
 
 QString CustomThemes::addFamily(const themes::Family &family)
@@ -526,9 +528,17 @@ bool CustomThemes::remove(const QString &id)
     if (!find(id)) {
         return fail(tr("That theme does not exist"));
     }
-    const QString filePath = themeFilePathForId(m_directory, id);
+    const QStringList filePaths = themeFilePathsForId(m_directory, id);
+    if (filePaths.isEmpty()) {
+        return fail(tr("Could not delete the theme"));
+    }
 
-    if (filePath.isEmpty() || !QFile::remove(filePath)) {
+    for (const QString &filePath : filePaths) {
+        if (!QFile::remove(filePath)) {
+            qCWarning(lcCustomThemes) << "could not delete theme file" << filePath;
+        }
+    }
+    if (!themeFilePathsForId(m_directory, id).isEmpty()) {
         return fail(tr("Could not delete the theme"));
     }
 
@@ -557,78 +567,6 @@ QString CustomThemes::duplicate(const QString &id)
     copy.id = newId();
     copy.name = tr("%1 copy").arg(source->name).left(kMaxNameLength);
     return writeFile(copy) ? addFamily(copy) : QString();
-}
-
-bool CustomThemes::exportTheme(const QString &id, const QString &path)
-{
-    const themes::Family *family = lookup(id);
-    if (!family) {
-        return fail(tr("That theme does not exist"));
-    }
-    if (path.trimmed().isEmpty()) {
-        return fail(tr("Choose a file to export to"));
-    }
-    QString target = expandedPath(path);
-    if (QFileInfo(target).isDir()) {
-        QString name = family->name;
-        name.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9 _-]")), QStringLiteral("_"));
-        target += u'/' + name + QStringLiteral(".json");
-    } else if (QFileInfo(target).suffix().isEmpty()) {
-        target += QStringLiteral(".json");
-    }
-    // an export never replaces a file somebody has there
-    if (QFileInfo::exists(target)) {
-        return fail(tr("The file already exists: %1").arg(target));
-    }
-    return writeJson(target, *family);
-}
-
-bool CustomThemes::exportThemeFromUrl(const QString &id, const QUrl &url)
-{
-    if (!url.isLocalFile()) {
-        return fail(tr("The selected export location is not a local file"));
-    }
-
-    const QString path = url.toLocalFile();
-
-    if (path.isEmpty()) {
-        return fail(tr("Choose a file to export to"));
-    }
-
-    return exportTheme(id, path);
-}
-
-QString CustomThemes::importTheme(const QString &path)
-{
-    if (path.trimmed().isEmpty()) {
-        fail(tr("Choose a file to import"));
-        return {};
-    }
-    QString error;
-    // always a new id, so an import never replaces a theme
-    const auto family = readFile(expandedPath(path), newId(), error);
-    if (!family) {
-        fail(error);
-        return {};
-    }
-    return writeFile(*family) ? addFamily(*family) : QString();
-}
-
-QString CustomThemes::importThemeFromUrl(const QUrl &url)
-{
-    if (!url.isLocalFile()) {
-        fail(tr("The selected import file is not a local file"));
-        return {};
-    }
-
-    const QString path = url.toLocalFile();
-
-    if (path.isEmpty()) {
-        fail(tr("Choose a file to import"));
-        return {};
-    }
-
-    return importTheme(path);
 }
 
 qreal CustomThemes::contrast(const QColor &a, const QColor &b)

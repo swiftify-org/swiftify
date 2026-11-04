@@ -45,6 +45,11 @@ int jsonFiles(const QString &directory)
     return QDir(directory).entryList({QStringLiteral("*.json")}, QDir::Files).size();
 }
 
+QString storedThemePath(const QString &directory, const QString &name, const QString &id)
+{
+    return QDir(directory).filePath(name + QStringLiteral("--") + id + QStringLiteral(".json"));
+}
+
 QString optionName(const Theme &theme, const QString &id)
 {
     for (const ThemeOption &option : theme.themeOptions(true)) {
@@ -88,21 +93,40 @@ private slots:
     {
         QTemporaryDir dir;
         const QByteArray good = R"({"schema":1,"name":"Good"})";
-        QVERIFY(writeFile(dir.filePath(kGoodId + QStringLiteral(".json")), good));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Good"), kGoodId), good));
         QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-not-a-uuid.json")), good));
         QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174000.backup.json")), good));
-        QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-123E4567-E89B-42D3-A456-426614174009.json")), good));
-        QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174001.json")), "{ nope"));
-        QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174002.json")),
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Uppercase"),
+                                          QStringLiteral("custom-123E4567-E89B-42D3-A456-426614174009")), good));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Broken"),
+                                          QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174001")), "{ nope"));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Oversized"),
+                                          QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174002")),
                           QByteArray(300 * 1024, ' ') + good));
-        QVERIFY(writeFile(dir.filePath(QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174003.json")),
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Future"),
+                                          QStringLiteral("custom-123e4567-e89b-42d3-a456-426614174003")),
                           R"({"schema":2,"name":"Future"})"));
         CustomThemes store(dir.path());
         QCOMPARE(store.families().size(), 1);
         QCOMPARE(store.families().first().id, kGoodId);
     }
 
-    void rejectsBadImports_data()
+    void duplicateIdsLoadTheFirstValidFileByName()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Alpha"), kGoodId),
+                          R"({"schema":1,"name":"Alpha theme"})"));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Zulu"), kGoodId),
+                          R"({"schema":1,"name":"Zulu theme"})"));
+
+        CustomThemes store(dir.path());
+
+        QCOMPARE(store.families().size(), 1);
+        QCOMPARE(store.families().first().id, kGoodId);
+        QCOMPARE(store.families().first().name, QStringLiteral("Alpha theme"));
+    }
+
+    void rejectsBadThemeFiles_data()
     {
         QTest::addColumn<QByteArray>("json");
         QTest::newRow("no schema") << QByteArray(R"({"name":"X"})");
@@ -118,50 +142,23 @@ private slots:
         QTest::newRow("variant not an object") << QByteArray(R"({"schema":1,"name":"X","dark":[]})");
     }
 
-    void rejectsBadImports()
+    void rejectsBadThemeFiles()
     {
         QFETCH(QByteArray, json);
         QTemporaryDir dir;
-        QTemporaryDir source;
-        const QString file = source.filePath(QStringLiteral("t.json"));
-        QVERIFY(writeFile(file, json));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Invalid"), kGoodId), json));
         CustomThemes store(dir.path());
-        QSignalSpy errors(&store, &CustomThemes::errorChanged);
-        QVERIFY(store.importTheme(file).isEmpty());
-        QVERIFY(!store.lastError().isEmpty());
-        QCOMPARE(errors.count(), 1);
-        QCOMPARE(store.families().size(), 0);
-        QCOMPARE(jsonFiles(dir.path()), 0);
-    }
-
-    void importRefusesMissingAndOversizedFiles()
-    {
-        QTemporaryDir dir;
-        QTemporaryDir source;
-        CustomThemes store(dir.path());
-        QVERIFY(store.importTheme(source.filePath(QStringLiteral("nothing.json"))).isEmpty());
-        QVERIFY(store.importTheme(QString()).isEmpty());
-        const QString big = source.filePath(QStringLiteral("big.json"));
-        QVERIFY(writeFile(big, QByteArray(300 * 1024, ' ') + R"({"schema":1,"name":"X"})"));
-        QVERIFY(store.importTheme(big).isEmpty());
         QCOMPARE(store.families().size(), 0);
     }
 
-    void importFillsGapsFromBaseAndNeverOverwrites()
+    void fillsMissingColorsFromBaseTheme()
     {
         QTemporaryDir dir;
-        QTemporaryDir source;
-        const QString file = source.filePath(QStringLiteral("t.json"));
-        QVERIFY(writeFile(file, R"({"schema":1,"name":"X","base":"nord","dark":{"primary":"#010203"},"unknown":1})"));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("X"), kGoodId),
+                          R"({"schema":1,"name":"X","base":"nord","dark":{"primary":"#010203"},"unknown":1})"));
         CustomThemes store(dir.path());
-        const QString first = store.importTheme(file);
-        const QString second = store.importTheme(file);
-        QVERIFY(!first.isEmpty());
-        QVERIFY(!second.isEmpty());
-        QVERIFY(first != second);
-        QCOMPARE(store.families().size(), 2);
-        QCOMPARE(jsonFiles(dir.path()), 2);
-        const themes::Family *family = store.find(first);
+        const themes::Family *family = store.find(kGoodId);
+        QVERIFY(family);
         const themes::Family *nord = themes::find(QStringLiteral("nord"));
         QCOMPARE(family->dark.primary, QRgb(0xff010203));
         QCOMPARE(family->dark.window, nord->dark.window);
@@ -241,6 +238,36 @@ private slots:
         QCOMPARE(jsonFiles(dir.path()), 1);
     }
 
+    void failedRenameSaveKeepsThePreviousFile()
+    {
+        QTemporaryDir dir;
+        CustomThemes store(dir.path());
+        QVERIFY(store.beginNew(QStringLiteral("default")));
+        const QString id = store.saveDraft();
+        QVERIFY(!id.isEmpty());
+
+        const QString oldPath = storedThemePath(dir.path(), QStringLiteral("My theme"), id);
+        QFile oldFile(oldPath);
+        QVERIFY(oldFile.open(QIODevice::ReadOnly));
+        const QByteArray oldContents = oldFile.readAll();
+        oldFile.close();
+
+        const QString blockedTarget = storedThemePath(dir.path(), QStringLiteral("Renamed"), id);
+        QVERIFY(QDir().mkpath(blockedTarget));
+        QVERIFY(store.beginEdit(id));
+        store.setDraftName(QStringLiteral("Renamed"));
+
+        QVERIFY(store.saveDraft().isEmpty());
+        QVERIFY(store.editing());
+        QCOMPARE(store.find(id)->name, QStringLiteral("My theme"));
+        QVERIFY(QFileInfo::exists(oldPath));
+        QVERIFY(QFileInfo(blockedTarget).isDir());
+
+        QFile unchangedFile(oldPath);
+        QVERIFY(unchangedFile.open(QIODevice::ReadOnly));
+        QCOMPARE(unchangedFile.readAll(), oldContents);
+    }
+
     void saveNeedsAName()
     {
         QTemporaryDir dir;
@@ -286,45 +313,20 @@ private slots:
         QVERIFY(!store.remove(id));
     }
 
-    void exportNeverOverwritesAndRoundTrips()
+    void removeDeletesAllFilesWithTheSameId()
     {
         QTemporaryDir dir;
-        QTemporaryDir out;
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Alpha"), kGoodId),
+                          R"({"schema":1,"name":"Alpha"})"));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Zulu"), kGoodId),
+                          R"({"schema":1,"name":"Zulu"})"));
         CustomThemes store(dir.path());
-        QVERIFY(store.beginNew(QStringLiteral("dracula")));
-        store.setDraftName(QStringLiteral("My / Theme"));
-        const QString id = store.saveDraft();
-        QVERIFY(store.exportTheme(id, out.path()));
-        const QStringList files = QDir(out.path()).entryList({QStringLiteral("*.json")}, QDir::Files);
-        QCOMPARE(files.size(), 1);
-        QVERIFY(!files.first().contains(u'/'));
+        QCOMPARE(store.families().size(), 1);
 
-        // a second export to the same place is refused, and the file is left as it was
-        const QString exported = out.filePath(files.first());
-        QFile before(exported);
-        QVERIFY(before.open(QIODevice::ReadOnly));
-        const QByteArray content = before.readAll();
-        before.close();
-        QVERIFY(!store.exportTheme(id, out.path()));
-        QVERIFY(store.lastError().contains(QStringLiteral("already exists")));
-        QVERIFY(!store.exportTheme(id, exported));
-        QFile after(exported);
-        QVERIFY(after.open(QIODevice::ReadOnly));
-        QCOMPARE(after.readAll(), content);
+        QVERIFY(store.remove(kGoodId));
 
-        const QString imported = store.importTheme(exported);
-        QVERIFY(!imported.isEmpty());
-        QVERIFY(imported != id);
-        const themes::Family *a = store.find(id);
-        const themes::Family *b = store.find(imported);
-        QCOMPARE(a->name, b->name);
-        QCOMPARE(a->light.primary, b->light.primary);
-        QCOMPARE(a->dark.window, b->dark.window);
-        QVERIFY(!store.exportTheme(QStringLiteral("custom-nope"), out.path()));
-        QVERIFY(!store.exportTheme(id, QString()));
-        // a name without a suffix gets one
-        QVERIFY(store.exportTheme(id, out.filePath(QStringLiteral("plain"))));
-        QVERIFY(QFileInfo::exists(out.filePath(QStringLiteral("plain.json"))));
+        QVERIFY(!store.find(kGoodId));
+        QCOMPARE(jsonFiles(dir.path()), 0);
     }
 
     // --- Theme, with a settings file of its own ---------------------------
@@ -337,7 +339,8 @@ private slots:
         QVERIFY(theme.customThemes()->beginNew(QStringLiteral("default")));
         const QString id = theme.customThemes()->saveDraft();
         QVERIFY(!id.isEmpty());
-        QVERIFY(QFileInfo::exists(dir.filePath(QStringLiteral("themes/") + id + QStringLiteral(".json"))));
+        QVERIFY(QFileInfo::exists(storedThemePath(dir.filePath(QStringLiteral("themes")),
+                                                  QStringLiteral("My theme"), id)));
         QCOMPARE(theme.customThemes()->parent(), &theme);
     }
 
@@ -450,7 +453,8 @@ private slots:
             settings.setThemeSource(kGoodId);
         }
         QVERIFY(QDir().mkpath(dir.filePath(QStringLiteral("themes"))));
-        QVERIFY(writeFile(dir.filePath(QStringLiteral("themes/") + kGoodId + QStringLiteral(".json")), "{ broken"));
+        QVERIFY(writeFile(storedThemePath(dir.filePath(QStringLiteral("themes")), QStringLiteral("Broken"), kGoodId),
+                          "{ broken"));
         Settings settings(path);
         Theme theme(&settings);
         QCOMPARE(settings.themeSource(), kGoodId);

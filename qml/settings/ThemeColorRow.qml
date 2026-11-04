@@ -61,18 +61,18 @@ Column {
     }
     // never while a slider is held, or the one under the pointer would be
     // destroyed in the middle of its own click: it is done on the release
-function rebuildSliders() {
-    if (!root.rebuildPending || (sliders.item && sliders.item.pressed)) {
-        return
+    function rebuildSliders() {
+        if (!root.rebuildPending || (sliders.item && sliders.item.pressed)) {
+            return
+        }
+
+        root.rebuildPending = false
+        root.rebuilding = true
+
+        Qt.callLater(() => {
+            root.rebuilding = false
+        })
     }
-
-    root.rebuildPending = false
-    root.rebuilding = true
-
-    Qt.callLater(() => {
-        root.rebuilding = false
-    })
-}
     function refresh() {
         hex.text = root.hexText
         if (sliders.active) {
