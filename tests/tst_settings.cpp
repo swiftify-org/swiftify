@@ -77,7 +77,7 @@ private slots:
 
     void germanLanguagePreferencePersists()
     {
-        if (!kGermanTranslationEnabled) {
+        if (!swiftify::kGermanTranslationEnabled) {
             QSKIP("German translation is disabled.");
         }
         QTemporaryDir directory;
