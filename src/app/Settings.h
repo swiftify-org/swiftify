@@ -92,6 +92,7 @@ class Settings : public QObject {
     Q_PROPERTY(QString logFilePath READ logFilePath CONSTANT FINAL)
     Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged FINAL)
     Q_PROPERTY(bool russianEnabled READ isRussianEnabled NOTIFY languageAvailabilityChanged FINAL)
+    Q_PROPERTY(bool germanEnabled READ isGermanEnabled NOTIFY languageAvailabilityChanged FINAL)
     Q_PROPERTY(QString disabledLanguageMessage READ disabledLanguageMessage CONSTANT FINAL)
 
 public:
@@ -218,6 +219,7 @@ public:
     Q_INVOKABLE void openLogsFolder() const;
     Q_INVOKABLE void openLogFile() const;
     bool isRussianEnabled() const;
+    bool isGermanEnabled() const;
     QString disabledLanguageMessage() const;
     Q_INVOKABLE bool isLanguageEnabled(const QString &language) const;
     void enforceEnabledLanguage();
