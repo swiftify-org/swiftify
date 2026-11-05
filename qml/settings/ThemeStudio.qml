@@ -25,7 +25,7 @@ import Swiftify
 Column {
     id: root
 
-    readonly property var store: Theme.customThemes
+    readonly property CustomThemes store: Theme.customThemes
     readonly property bool dark: Theme.dark
     property string pendingDelete
 
@@ -55,11 +55,11 @@ Column {
         { a: "primary", b: "page", minimum: 3, label: qsTr("Accent on surface") }
     ]
 
-    function colorOf(key) {
+    function colorOf(key: string): color {
         root.store.draftVersion
         return root.store.draftColor(root.dark, key)
     }
-    function report(ok) {
+    function report(ok: bool): void {
         if (!ok) {
             UiState.toastRequested(root.store.lastError)
         }

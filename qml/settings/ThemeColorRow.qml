@@ -25,7 +25,7 @@ import Swiftify
 Column {
     id: root
 
-    required property var store
+    required property CustomThemes store
     required property bool editingDark
     required property string colorKey
     required property string label
@@ -53,7 +53,7 @@ Column {
             root.keptSaturation = root.current.hsvSaturation
         }
     }
-    function apply(hue, saturation, value) {
+    function apply(hue: real, saturation: real, value: real): void {
         root.keptHue = hue
         root.keptSaturation = saturation
         root.applying = true
@@ -81,7 +81,7 @@ Column {
             Qt.callLater(root.rebuildSliders)
         }
     }
-    function commitHex(announce) {
+    function commitHex(announce: bool): void {
         const before = root.hexText
         if (root.store.setDraftColorHex(root.editingDark, root.colorKey, hex.text)) {
             hex.text = root.hexText
