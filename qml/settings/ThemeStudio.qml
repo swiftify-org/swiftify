@@ -291,8 +291,5 @@ Column {
                 }
             }
         }
-        NoteText {
-            text: qsTr("a warning only, saving is never blocked. 4.5:1 is the usual minimum for text, 3:1 for accents.")
-        }
     }
 }

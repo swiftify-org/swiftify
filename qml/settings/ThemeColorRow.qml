@@ -33,6 +33,7 @@ Column {
     // the sliders are built again to show what was set outside them
     property bool rebuilding: false
     property bool rebuildPending: false
+    property bool slidersPressed: false
     // a grey or a black has no hue in its rgb, and a black no saturation: the
     // last ones are kept for the sliders to come back to
     property real keptHue: 0
@@ -62,7 +63,7 @@ Column {
     // never while a slider is held, or the one under the pointer would be
     // destroyed in the middle of its own click: it is done on the release
     function rebuildSliders() {
-        if (!root.rebuildPending || (sliders.item && sliders.item.pressed)) {
+        if (!root.rebuildPending || root.slidersPressed) {
             return
         }
 
@@ -145,8 +146,15 @@ Column {
         width: parent.width
         active: root.open && !root.rebuilding
 
+        onActiveChanged: {
+            if (!active) {
+                root.slidersPressed = false
+            }
+        }
+
         sourceComponent: Column {
             readonly property bool pressed: hue.pressed || saturation.pressed || brightness.pressed
+            onPressedChanged: root.slidersPressed = pressed
 
             ConfigSlider {
                 id: hue
