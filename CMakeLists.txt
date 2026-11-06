@@ -19,7 +19,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(Swiftify
-    VERSION 0.25.1
+    VERSION 0.25.2
     DESCRIPTION "A native Spotify client"
     LANGUAGES C CXX)
 
@@ -188,6 +188,48 @@ if(SWIFTIFY_DOWNLOAD_INTERFACE_FONT)
         fc13d69f63e36d284b6e383d4d1463d8ad404f0aa065e57cf961252d51063137)
     if(NOT APPLE)
         install(FILES ${SWIFTIFY_INTERFACE_FONT} ${SWIFTIFY_INTERFACE_FONT_LICENSE}
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/swiftify/fonts)
+    endif()
+endif()
+
+# gveret levin: the face the lyrics use for hebrew. same commit and
+# repository as google sans flex above; its licence (OFL) travels with it.
+option(SWIFTIFY_DOWNLOAD_GVERET_FONT
+    "Download Gveret Levin to install beside the app" ON)
+if(SWIFTIFY_DOWNLOAD_GVERET_FONT)
+    set(SWIFTIFY_GVERET_FONT ${SWIFTIFY_FONT_DIRECTORY}/GveretLevin.ttf)
+    set(SWIFTIFY_GVERET_FONT_LICENSE ${SWIFTIFY_FONT_DIRECTORY}/GveretLevin-OFL.txt)
+    set(SWIFTIFY_GVERET_FONTS https://raw.githubusercontent.com/google/fonts/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/gveretlevin)
+    swiftify_download_asset(
+        "${SWIFTIFY_GVERET_FONTS}/GveretLevin-Regular.ttf"
+        "${SWIFTIFY_GVERET_FONT}"
+        05c443395d48b97f43469da4fb08772a4c612fda306348577dbc40a1267912b1)
+    swiftify_download_asset("${SWIFTIFY_GVERET_FONTS}/OFL.txt"
+        "${SWIFTIFY_GVERET_FONT_LICENSE}"
+        d9b228718f3f81e69ce614c6b2f4c382fd34396ca8149b4f28d07e85b8781eba)
+    if(NOT APPLE)
+        install(FILES ${SWIFTIFY_GVERET_FONT} ${SWIFTIFY_GVERET_FONT_LICENSE}
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/swiftify/fonts)
+    endif()
+endif()
+
+# fredoka: the face for hebrew text outside the lyrics. same commit
+# and repository again; its licence (OFL) travels with it.
+option(SWIFTIFY_DOWNLOAD_FREDOKA_FONT
+    "Download Fredoka to install beside the app" ON)
+if(SWIFTIFY_DOWNLOAD_FREDOKA_FONT)
+    set(SWIFTIFY_FREDOKA_FONT ${SWIFTIFY_FONT_DIRECTORY}/Fredoka.ttf)
+    set(SWIFTIFY_FREDOKA_FONT_LICENSE ${SWIFTIFY_FONT_DIRECTORY}/Fredoka-OFL.txt)
+    set(SWIFTIFY_FREDOKA_FONTS https://raw.githubusercontent.com/google/fonts/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/fredoka)
+    swiftify_download_asset(
+        "${SWIFTIFY_FREDOKA_FONTS}/Fredoka%5Bwdth,wght%5D.ttf"
+        "${SWIFTIFY_FREDOKA_FONT}"
+        2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8)
+    swiftify_download_asset("${SWIFTIFY_FREDOKA_FONTS}/OFL.txt"
+        "${SWIFTIFY_FREDOKA_FONT_LICENSE}"
+        5c9e7eee5c6b25f4b05b8d53b2e470ea4962f9ced742d044a98f7d95d1375bab)
+    if(NOT APPLE)
+        install(FILES ${SWIFTIFY_FREDOKA_FONT} ${SWIFTIFY_FREDOKA_FONT_LICENSE}
             DESTINATION ${CMAKE_INSTALL_DATADIR}/swiftify/fonts)
     endif()
 endif()
@@ -469,6 +511,13 @@ if(APPLE)
             PROPERTIES MACOSX_PACKAGE_LOCATION Resources/fonts)
         target_sources(swiftify PRIVATE ${SWIFTIFY_INTERFACE_FONT} ${SWIFTIFY_INTERFACE_FONT_LICENSE})
     endif()
+    foreach(font SWIFTIFY_GVERET_FONT SWIFTIFY_FREDOKA_FONT)
+        if(${font})
+            set_source_files_properties(${${font}} ${${font}_LICENSE}
+                PROPERTIES MACOSX_PACKAGE_LOCATION Resources/fonts)
+            target_sources(swiftify PRIVATE ${${font}} ${${font}_LICENSE})
+        endif()
+    endforeach()
     set_source_files_properties(LICENSE PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_sources(swiftify PRIVATE LICENSE)
     set_source_files_properties(${SWIFTIFY_THIRD_PARTY_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)

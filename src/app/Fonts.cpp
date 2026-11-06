@@ -34,6 +34,10 @@ constexpr auto kIconFamily = "Material Symbols Rounded";
 constexpr auto kIconFile = "MaterialSymbolsRounded.ttf";
 constexpr auto kInterfaceFamily = "Google Sans Flex";
 constexpr auto kInterfaceFile = "GoogleSansFlex.ttf";
+constexpr auto kGveretFamily = "Gveret Levin";
+constexpr auto kGveretFile = "GveretLevin.ttf";
+constexpr auto kFredokaFamily = "Fredoka";
+constexpr auto kFredokaFile = "Fredoka.ttf";
 
 /// a font installed beside the app, unless the system has it already
 bool loadBundled(const char *family, const char *file)
@@ -73,6 +77,16 @@ void loadInterfaceFont()
 {
     if (!loadBundled(kInterfaceFamily, kInterfaceFile)) {
         qCInfo(lcFonts) << "Google Sans Flex is not installed; text uses the next face along, and titles are not rounded";
+    }
+}
+
+void loadHebrewFont()
+{
+    if (!loadBundled(kGveretFamily, kGveretFile)) {
+        qCInfo(lcFonts) << "Gveret Levin is not installed; hebrew lyrics use the interface font";
+    }
+    if (!loadBundled(kFredokaFamily, kFredokaFile)) {
+        qCInfo(lcFonts) << "Fredoka is not installed; hebrew text uses the interface font";
     }
 }
 

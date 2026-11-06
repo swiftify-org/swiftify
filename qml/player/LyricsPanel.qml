@@ -149,6 +149,7 @@ Item {
 
             StyledText {
                 id: text
+                hebrewFamily: "Gveret Levin"
                 width: parent.width
                 transformOrigin: Item.TopLeft
                 text: line.words.length > 0 ? line.words : "♪"

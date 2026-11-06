@@ -206,6 +206,7 @@ Item {
 
             StyledText {
                 id: label
+                hebrewFamily: "Gveret Levin"
                 objectName: "lyricText"
                 width: parent.width
                 y: 8
