@@ -111,6 +111,23 @@ private slots:
         QCOMPARE(store.families().first().id, kGoodId);
     }
 
+    void invalidDuplicateDoesNotBlockLaterValidFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Alpha"), kGoodId),
+                          "{ nope"));
+        QVERIFY(writeFile(storedThemePath(dir.path(), QStringLiteral("Zulu"), kGoodId),
+                          R"({"schema":1,"name":"Zulu theme"})"));
+
+        CustomThemes store(dir.path());
+
+        QCOMPARE(store.families().size(), 1);
+        QCOMPARE(store.families().first().id, kGoodId);
+        QCOMPARE(store.families().first().name, QStringLiteral("Zulu theme"));
+    }
+
     void duplicateIdsLoadTheFirstValidFileByName()
     {
         QTemporaryDir dir;
