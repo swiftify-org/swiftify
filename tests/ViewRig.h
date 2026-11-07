@@ -90,6 +90,8 @@ struct ViewRig {
 
     ViewRig()
     {
+        // the tray's menu is native, and the platform tests run on has none
+        settings.setTrayIcon(false);
         // Fallback sleeves use the same image provider as ordinary covers.
         // Install it just as main() does, even when a fixture has no remote art.
         engine.addImageProvider(QStringLiteral("art"), new ArtworkImageProvider);

@@ -3425,6 +3425,7 @@ private slots:
     void windowControlsOnRightMovesControlsAndInspector()
     {
         Rig rig;
+        rig.settings.setTrayIcon(false);
         rig.settings.setPerformanceMode(true);
         rig.settings.setShowWindowControls(true);
         rig.settings.setWindowControlsOnRight(false);
