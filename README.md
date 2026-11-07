@@ -247,8 +247,8 @@ bind = , XF86AudioPlay, exec, swiftify --play-pause
 - Rust (stable, from [rustup](https://rustup.rs))
 
 the first cmake run needs internet, it pulls [Corrosion](https://github.com/corrosion-rs/corrosion)
-(which builds the rust core as part of the cmake build) and two fonts, Material Symbols
-Rounded and Google Sans Flex, each checked against a pinned hash.
+(which builds the rust core as part of the cmake build) and four fonts, Material Symbols
+Rounded, Google Sans Flex, Gveret Levin and Fredoka, each checked against a pinned hash.
 
 the builds below skip the tests with `-DBUILD_TESTING=OFF`. for a manual CMake
 build, drop that and run `ctest --test-dir build` if u want them.

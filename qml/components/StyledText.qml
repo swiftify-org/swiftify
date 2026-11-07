@@ -30,7 +30,12 @@ Text {
     property real changeDistanceY: 6
     property bool tabularNumbers: false
 
-    font.family: Appearance.fontFamily
+    // the face for hebrew text (the interface font has hebrew itself, but this
+    // one is used when it is installed); the lyrics set their own. empty keeps
+    // the interface font
+    property string hebrewFamily: "Fredoka"
+
+    font.family: hebrewFamily.length > 0 && /[\u0590-\u05FF]/.test(text) ? hebrewFamily : Appearance.fontFamily
     font.pixelSize: Appearance.fontSize.small
     font.features: tabularNumbers ? ({ "tnum": 1 }) : ({})
     color: Appearance.colors.onSurface

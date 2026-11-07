@@ -34,6 +34,10 @@ QString iconFamily();
 /// axes (TitleText). before interfaceFamily() is first asked.
 void loadInterfaceFont();
 
+/// makes Gveret Levin (the lyrics' face for hebrew) and Fredoka (hebrew
+/// everywhere else) available, from the system or beside swiftify
+void loadHebrewFont();
+
 /// the first installed face of end4's google sans flex, google sans, rubik,
 /// inter and noto sans, or the platform default.
 QString interfaceFamily();

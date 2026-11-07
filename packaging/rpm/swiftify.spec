@@ -1,4 +1,4 @@
-# the build downloads corrosion, both fonts and the rust crates, so it needs
+# the build downloads corrosion, the fonts and the rust crates, so it needs
 # the network
 Name:           swiftify
 Version:        0.25.0

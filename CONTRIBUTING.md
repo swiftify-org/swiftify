@@ -21,7 +21,7 @@ cmake --build build
 ctest --test-dir build
 ```
 
-the first configure needs internet, it fetches corrosion and two fonts, each
+the first configure needs internet, it fetches corrosion and four fonts, each
 pinned by hash. on windows use `tools/build-windows.ps1` as the readme says.
 
 ## Where things are

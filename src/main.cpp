@@ -295,6 +295,7 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     fonts::loadIconFont();
     fonts::loadInterfaceFont();
+    fonts::loadHebrewFont();
 
     ErrorCenter errors(nullptr);
     Settings settings(nullptr);
