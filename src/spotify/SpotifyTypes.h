@@ -94,6 +94,7 @@ struct Song {
     /// a music file of the person's own (LocalLibrary), not a spotify track:
     /// nothing spotify knows can be done with it
     Q_PROPERTY(bool isLocalFile READ isLocalFile FINAL)
+    Q_PROPERTY(QString shareUrl READ shareUrl FINAL)
 
 public:
     Song();
@@ -124,6 +125,8 @@ public:
 
     /// the base62 id at the end of the uri
     QString spotifyId() const;
+    /// the open.spotify.com share URL for this track
+    QString shareUrl() const;
     /// the album to open from this song, when spotify told us enough
     Album albumDestination() const;
     Artist primaryArtist() const { return artistItems.isEmpty() ? Artist {} : artistItems.first(); }
