@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QLocalServer>
 #include <QNetworkAccessManager>
+#include <QRegularExpression>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
@@ -276,7 +277,12 @@ private slots:
         QCOMPARE(activity.value(QStringLiteral("details")).toString(), QStringLiteral("Я\u00a0"));
         QCOMPARE(activity.value(QStringLiteral("state")).toString(), song.artists);
         QVERIFY(activity.contains(QStringLiteral("timestamps")));
-        QVERIFY(!activity.contains(QStringLiteral("assets")));
+        QVERIFY(activity.contains(QStringLiteral("assets")));
+        const auto assets = activity.value(QStringLiteral("assets")).toObject();
+        const QString initialLargeImage = assets.value(QStringLiteral("large_image")).toString();
+        static const QRegularExpression artworkRegex(QStringLiteral(R"(^https://shredos\.dev/img/thumb/artwork[1-5]\.png$)"));
+        QVERIFY(artworkRegex.match(initialLargeImage).hasMatch());
+        QCOMPARE(assets.value(QStringLiteral("large_text")).toString(), song.albumName);
         QVERIFY(!QJsonDocument(message).toJson().contains("private"));
 
         player.pause();
@@ -287,6 +293,7 @@ private slots:
         QCOMPARE(activity.value(QStringLiteral("details")).toString(), QStringLiteral("Я\u00a0"));
         QCOMPARE(activity.value(QStringLiteral("state")).toString(), QStringLiteral("Paused · Исполнитель"));
         QVERIFY(activity.contains(QStringLiteral("timestamps")));
+        QCOMPARE(activity.value(QStringLiteral("assets")).toObject().value(QStringLiteral("large_image")).toString(), initialLargeImage);
 
         // Pause doesn't keep sending an activity as wall-clock time advances.
         message = {};

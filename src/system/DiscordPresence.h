@@ -105,6 +105,8 @@ private:
     QJsonObject m_lastMetadata;
     qint64 m_lastPosition = 0;
     qint64 m_lastUpdate = 0;
+    quint64 m_localArtworkInstanceId = 0;
+    int m_localArtworkIndex = 1;
 };
 
 } // namespace swiftify
