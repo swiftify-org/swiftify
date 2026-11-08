@@ -101,6 +101,20 @@ updates come in with the rest of your system updates
 </details>
 
 <details>
+    <summary><b>gentoo linux</b></summary>
+<br>
+
+via the [ahhh_overlay](https://github.com/AhhhSaturn/ahhh_overlay/tree/main/media-sound/swiftify)
+
+```sh
+eselect repository enable ahhh_overlay
+emaint sync --repo ahhh_overlay
+emerge media-sound/swiftify
+```
+
+</details>
+
+<details>
 <summary><b>other linux</b></summary>
 <br>
 
