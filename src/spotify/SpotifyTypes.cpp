@@ -65,6 +65,18 @@ QString Song::spotifyId() const
     return colon < 0 ? uri : uri.mid(colon + 1);
 }
 
+QString Song::shareUrl() const
+{
+    if (isLocalFile() || uri.isEmpty()) {
+        return {};
+    }
+    const QString id = spotifyId();
+    if (id.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("https://open.spotify.com/track/") + id;
+}
+
 Album Song::albumDestination() const
 {
     if (albumId.isEmpty() || albumName.isEmpty()) {

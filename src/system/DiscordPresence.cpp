@@ -28,6 +28,7 @@
 #include <QJsonDocument>
 #include <QJSEngine>
 #include <QLoggingCategory>
+#include <QRandomGenerator>
 #include <QSignalBlocker>
 #include <QUuid>
 #include <QtEndian>
@@ -256,6 +257,7 @@ void DiscordPresence::configure()
     m_endpoints.clear();
     m_failure = Failure::None;
     m_failureCode = -1;
+    m_localArtworkInstanceId = 0;
     emit statusChanged();
     if (!m_settings->discordEnabled() || m_settings->discordApplicationId().isEmpty()) return;
     m_endpoints = m_socketLocator();
@@ -419,6 +421,16 @@ void DiscordPresence::update()
     if (!song.isLocalFile() && song.artworkUrl.scheme() == QLatin1StringView("https")
         && song.artworkUrl.host() == QLatin1StringView("i.scdn.co")) {
         QJsonObject assets {{QStringLiteral("large_image"), song.artworkUrl.toString()}};
+        const QString album = fitText(song.albumName);
+        if (!album.isEmpty()) assets.insert(QStringLiteral("large_text"), album);
+        activity.insert(QStringLiteral("assets"), assets);
+    } else if (song.isLocalFile()) {
+        if (m_localArtworkInstanceId != song.instanceId) {
+            m_localArtworkInstanceId = song.instanceId;
+            m_localArtworkIndex = QRandomGenerator::global()->bounded(1, 6);
+        }
+        const QString fallbackUrl = QStringLiteral("https://shredos.dev/img/thumb/artwork%1.png").arg(m_localArtworkIndex);
+        QJsonObject assets {{QStringLiteral("large_image"), fallbackUrl}};
         const QString album = fitText(song.albumName);
         if (!album.isEmpty()) assets.insert(QStringLiteral("large_text"), album);
         activity.insert(QStringLiteral("assets"), assets);
