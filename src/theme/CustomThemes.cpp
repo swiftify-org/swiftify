@@ -351,23 +351,28 @@ bool CustomThemes::writeFile(const themes::Family &family)
 
     const QDir directory(m_directory);
     const QString targetPath = directory.absoluteFilePath(themeFileName(family));
-    if (!writeJson(targetPath, family)) {
-        return false;
-    }
 
-    for (const QString &path : themeFilePathsForId(m_directory, family.id)) {
-        if (path != targetPath && !QFile::remove(path)) {
-            qCWarning(lcCustomThemes) << "could not remove old theme file" << path;
+    // Keep an existing theme at its original path. Changing the JSON name is
+    // atomic with QSaveFile; moving to a name-derived path would require a
+    // second, non-atomic deletion that can fail after a successful write.
+    if (find(family.id)) {
+        QStringList paths = themeFilePathsForId(m_directory, family.id);
+        std::sort(paths.begin(), paths.end(), [](const QString &a, const QString &b) {
+            return QString::compare(a, b, Qt::CaseSensitive) < 0;
+        });
+        for (const QString &path : paths) {
+            if (!QFileInfo(path).isReadable()) {
+                continue;
+            }
+            QString error;
+            if (readFile(path, family.id, error)) {
+                return writeJson(path, family);
+            }
         }
+        return fail(tr("Could not write %1").arg(targetPath));
     }
 
-    for (const QString &path : themeFilePathsForId(m_directory, family.id)) {
-        if (path != targetPath) {
-            return fail(tr("Could not delete the theme"));
-        }
-    }
-
-    return true;
+    return writeJson(targetPath, family);
 }
 
 QString CustomThemes::addFamily(const themes::Family &family)

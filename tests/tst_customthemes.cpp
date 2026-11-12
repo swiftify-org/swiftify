@@ -255,34 +255,144 @@ private slots:
         QCOMPARE(jsonFiles(dir.path()), 1);
     }
 
-    void failedRenameSaveKeepsThePreviousFile()
+    void renameUsesExistingFileAndSurvivesRestart_data()
     {
+        QTest::addColumn<QString>("oldName");
+        QTest::addColumn<QString>("newName");
+        QTest::newRow("new name sorts first") << QStringLiteral("Zulu") << QStringLiteral("Alpha");
+        QTest::newRow("old name sorts first") << QStringLiteral("Alpha") << QStringLiteral("Zulu");
+    }
+
+    void renameUsesExistingFileAndSurvivesRestart()
+    {
+        QFETCH(QString, oldName);
+        QFETCH(QString, newName);
         QTemporaryDir dir;
+        QVERIFY(dir.isValid());
         CustomThemes store(dir.path());
         QVERIFY(store.beginNew(QStringLiteral("default")));
+        store.setDraftName(oldName);
+        QVERIFY(store.setDraftColor(false, QStringLiteral("primary"), QColor(0x11, 0x22, 0x33)));
         const QString id = store.saveDraft();
         QVERIFY(!id.isEmpty());
 
-        const QString oldPath = storedThemePath(dir.path(), QStringLiteral("My theme"), id);
-        QFile oldFile(oldPath);
-        QVERIFY(oldFile.open(QIODevice::ReadOnly));
-        const QByteArray oldContents = oldFile.readAll();
-        oldFile.close();
+        const QString originalPath = storedThemePath(dir.path(), oldName, id);
+        const QString renamedPath = storedThemePath(dir.path(), newName, id);
+        QVERIFY(QFileInfo::exists(originalPath));
+        QVERIFY(store.beginEdit(id));
+        store.setDraftName(newName);
+        QVERIFY(store.setDraftColor(false, QStringLiteral("primary"), QColor(0x44, 0x55, 0x66)));
+        QCOMPARE(store.saveDraft(), id);
+        QVERIFY(!store.editing());
+        QCOMPARE(store.find(id)->name, newName);
+        QCOMPARE(store.find(id)->light.primary, QRgb(0xff445566));
 
-        const QString blockedTarget = storedThemePath(dir.path(), QStringLiteral("Renamed"), id);
+        // No second filename and no deletion step: a rename commits one JSON file.
+        QVERIFY(QFileInfo::exists(originalPath));
+        QVERIFY(!QFileInfo::exists(renamedPath));
+        QCOMPARE(jsonFiles(dir.path()), 1);
+
+        CustomThemes reloaded(dir.path());
+        const themes::Family *family = reloaded.find(id);
+        QVERIFY(family);
+        QCOMPARE(family->name, newName);
+        QCOMPARE(family->light.primary, QRgb(0xff445566));
+    }
+
+    void failedNewSaveKeepsDraftAndDoesNotCreateTheme()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CustomThemes store(dir.path());
+        QVERIFY(store.beginNew(QStringLiteral("default")));
+        const QString blockedTarget = storedThemePath(dir.path(), QStringLiteral("My theme"), store.draftId());
         QVERIFY(QDir().mkpath(blockedTarget));
+
+        QSignalSpy errors(&store, &CustomThemes::errorChanged);
+        QVERIFY(store.saveDraft().isEmpty());
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(store.editing());
+        QVERIFY(store.dirty());
+        QCOMPARE(store.families().size(), 0);
+        QCOMPARE(jsonFiles(dir.path()), 0);
+        QVERIFY(QFileInfo(blockedTarget).isDir());
+    }
+
+    void missingExistingFileDoesNotCreateNewFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CustomThemes store(dir.path());
+        QVERIFY(store.beginNew(QStringLiteral("default")));
+        store.setDraftName(QStringLiteral("Original"));
+        QVERIFY(store.setDraftColor(false, QStringLiteral("primary"), QColor(0x11, 0x22, 0x33)));
+        const QString id = store.saveDraft();
+        QVERIFY(!id.isEmpty());
+
+        const QString originalPath = storedThemePath(dir.path(), QStringLiteral("Original"), id);
+        const QString backupPath = dir.filePath(QStringLiteral("original-backup"));
+        const QString renamedPath = storedThemePath(dir.path(), QStringLiteral("Renamed"), id);
         QVERIFY(store.beginEdit(id));
         store.setDraftName(QStringLiteral("Renamed"));
+        QVERIFY(store.setDraftColor(false, QStringLiteral("primary"), QColor(0x44, 0x55, 0x66)));
 
+        // Make the saved file unavailable while leaving the new name free.
+        // A fallback to the new filename would incorrectly report success.
+        QVERIFY(QFile::rename(originalPath, backupPath));
+        QVERIFY(!QFileInfo::exists(renamedPath));
+        QSignalSpy errors(&store, &CustomThemes::errorChanged);
         QVERIFY(store.saveDraft().isEmpty());
+        QCOMPARE(errors.count(), 1);
         QVERIFY(store.editing());
-        QCOMPARE(store.find(id)->name, QStringLiteral("My theme"));
-        QVERIFY(QFileInfo::exists(oldPath));
-        QVERIFY(QFileInfo(blockedTarget).isDir());
+        QVERIFY(store.dirty());
+        QVERIFY(store.find(id));
+        QCOMPARE(store.find(id)->name, QStringLiteral("Original"));
+        QCOMPARE(store.find(id)->light.primary, QRgb(0xff112233));
+        QVERIFY(!QFileInfo::exists(renamedPath));
+        QCOMPARE(jsonFiles(dir.path()), 0);
 
-        QFile unchangedFile(oldPath);
-        QVERIFY(unchangedFile.open(QIODevice::ReadOnly));
-        QCOMPARE(unchangedFile.readAll(), oldContents);
+        // Restore the previous file and check the persisted state on reload.
+        QVERIFY(QFile::rename(backupPath, originalPath));
+        QCOMPARE(jsonFiles(dir.path()), 1);
+        CustomThemes reloaded(dir.path());
+        const themes::Family *family = reloaded.find(id);
+        QVERIFY(family);
+        QCOMPARE(family->name, QStringLiteral("Original"));
+        QCOMPARE(family->light.primary, QRgb(0xff112233));
+    }
+
+    void renameUpdatesTheLoadedFileWhenDuplicateIdsExist()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString alphaPath = storedThemePath(dir.path(), QStringLiteral("Alpha"), kGoodId);
+        const QString zuluPath = storedThemePath(dir.path(), QStringLiteral("Zulu"), kGoodId);
+        const QByteArray zuluJson = R"({"schema":1,"name":"Zulu","light":{"primary":"#abcdef"}})";
+        QVERIFY(writeFile(alphaPath, R"({"schema":1,"name":"Alpha","light":{"primary":"#112233"}})"));
+        QVERIFY(writeFile(zuluPath, zuluJson));
+
+        CustomThemes store(dir.path());
+        const themes::Family *loaded = store.find(kGoodId);
+        QVERIFY(loaded);
+        QCOMPARE(loaded->name, QStringLiteral("Alpha"));
+        QVERIFY(store.beginEdit(kGoodId));
+        store.setDraftName(QStringLiteral("Renamed"));
+        QVERIFY(store.setDraftColor(false, QStringLiteral("primary"), QColor(0x44, 0x55, 0x66)));
+        QCOMPARE(store.saveDraft(), kGoodId);
+        QCOMPARE(jsonFiles(dir.path()), 2);
+        QVERIFY(QFileInfo::exists(alphaPath));
+        QVERIFY(QFileInfo::exists(zuluPath));
+        QVERIFY(!QFileInfo::exists(storedThemePath(dir.path(), QStringLiteral("Renamed"), kGoodId)));
+
+        QFile untouched(zuluPath);
+        QVERIFY(untouched.open(QIODevice::ReadOnly));
+        QCOMPARE(untouched.readAll(), zuluJson);
+
+        CustomThemes reloaded(dir.path());
+        const themes::Family *family = reloaded.find(kGoodId);
+        QVERIFY(family);
+        QCOMPARE(family->name, QStringLiteral("Renamed"));
+        QCOMPARE(family->light.primary, QRgb(0xff445566));
     }
 
     void saveNeedsAName()
