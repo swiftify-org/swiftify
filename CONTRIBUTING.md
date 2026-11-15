@@ -108,6 +108,10 @@ animations are fine in two cases
 a note or description in the ui has to tell the user something the label
 doesnt. a cache setting doesnt need a note saying it caches songs. the same goes for code comments.
 
+### changes
+
+tell us what changed. describe your changes and attach screenshots if possible. this will make reviewing way faster and easier for your PR to get accepted
+
 ## AI Usage
 
 using AI to code isnt inherently bad, BUT PLEASE take your time to review AI generated code, and write your own PRs.
