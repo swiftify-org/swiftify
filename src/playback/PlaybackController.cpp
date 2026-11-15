@@ -74,6 +74,8 @@ PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *sessi
     connect(&m_pollTimer, &QTimer::timeout, this, &PlaybackController::pollPlayback);
     m_sleepTimer.setInterval(250);
     connect(&m_sleepTimer, &QTimer::timeout, this, &PlaybackController::sleepTimerTick);
+    m_connectSyncTimer.setInterval(3000);
+    connect(&m_connectSyncTimer, &QTimer::timeout, this, [this] { detach(runSyncConnectState()); });
 
     const double storedVolume = std::clamp(m_settings->value(kVolumeKey, 0.75).toDouble(), 0.0, 1.0);
     m_volume = storedVolume;
@@ -128,6 +130,7 @@ PlaybackController::~PlaybackController()
     savePlaybackState();
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
+    m_devicesRequest.cancel();
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -407,7 +410,7 @@ bool PlaybackController::canSkipBackward() const
     if (!m_currentSong) {
         return false;
     }
-    if (m_remote) {
+    if (m_remote || m_activeConnectDevice) {
         return true;
     }
     if (m_livePositionMs > kRestartThresholdMs) {
@@ -418,7 +421,7 @@ bool PlaybackController::canSkipBackward() const
 
 bool PlaybackController::canSkipForward() const
 {
-    if (m_remote && m_currentSong) {
+    if ((m_remote || m_activeConnectDevice) && m_currentSong) {
         return true;
     }
     const QList<Song> &queue = activeQueue();
@@ -658,6 +661,38 @@ void PlaybackController::playFromQueue(const Song &song)
 void PlaybackController::startPlayback(const Song &song, bool recordHistory, bool fromSearch,
                                        quint32 crossfadeDurationMs, quint32 initialPositionMs)
 {
+    if (m_activeConnectDevice) {
+        if (!song.isLocalFile()) {
+            m_remote = false;
+            if (recordHistory && m_currentSong && !m_currentSong->isSameInstance(song)) {
+                m_history.append(*m_currentSong);
+            }
+            m_playbackNeedsLoad = false;
+            m_restoredPlayback = false;
+            m_resumePositionMs = initialPositionMs;
+            setCurrentSong(song, 0);
+            setLoading(false);
+            setPlaying(true);
+            setStatus(QStringLiteral("Playing"));
+            setLivePosition(initialPositionMs);
+            setDuration(quint32(std::max(0, song.durationMs)));
+            m_lastConnectPollMs = QDateTime::currentMSecsSinceEpoch();
+            loadLyrics(song);
+            queueDidChange();
+            syncMediaSession();
+            if (fromSearch) {
+                emit playedFromSearch(song);
+            }
+            const QString deviceId = m_activeConnectDevice->id;
+            const QString uri = song.uri;
+            sendConnectCommand(QStringLiteral("Starting playback"), [this, deviceId, uri, initialPositionMs](QString token) {
+                return m_session->webApi().remotePlay(deviceId, {uri}, 0, int(initialPositionMs), token);
+            });
+            return;
+        }
+        clearActiveConnectDevice(true);
+    }
+
     // playing a song here takes over from whatever started one elsewhere
     m_remote = false;
     if (recordHistory && m_currentSong && !m_currentSong->isSameInstance(song)) {
@@ -837,6 +872,20 @@ void PlaybackController::togglePlayback()
 
 void PlaybackController::pause()
 {
+    if (m_activeConnectDevice) {
+        setLoading(false);
+        if (m_currentSong) {
+            setStatus(QStringLiteral("Paused"));
+        }
+        setPlaying(false);
+        syncMediaSession();
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Pausing playback"), [this, deviceId](QString token) {
+            return m_session->webApi().remotePause(deviceId, token);
+        });
+        return;
+    }
+
     // a play request may still be loading. withdrawing it stops its
     // completion from undoing this pause.
     cancelPlaybackRequest();
@@ -856,6 +905,17 @@ void PlaybackController::pause()
 void PlaybackController::resume()
 {
     if (!m_currentSong) {
+        return;
+    }
+    if (m_activeConnectDevice) {
+        setStatus(QStringLiteral("Playing"));
+        setPlaying(true);
+        m_lastConnectPollMs = QDateTime::currentMSecsSinceEpoch();
+        syncMediaSession();
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Resuming playback"), [this, deviceId](QString token) {
+            return m_session->webApi().remotePlay(deviceId, {}, 0, 0, token);
+        });
         return;
     }
     // pause may have withdrawn the load before this song reached the core, or
@@ -998,6 +1058,22 @@ QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
 
 void PlaybackController::skipBackward()
 {
+    if (m_activeConnectDevice) {
+        if (m_livePositionMs > kRestartThresholdMs) {
+            seek(0);
+            return;
+        }
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Skipping backward"), [this, deviceId](QString token) {
+            return m_session->webApi().remotePrevious(deviceId, token);
+        });
+        QTimer::singleShot(400, this, [this] {
+            if (m_activeConnectDevice) {
+                detach(runSyncConnectState());
+            }
+        });
+        return;
+    }
     if (m_remote && m_core->skipRemote(false)) {
         return;
     }
@@ -1011,6 +1087,18 @@ void PlaybackController::skipBackward()
 
 void PlaybackController::skipToPreviousSong()
 {
+    if (m_activeConnectDevice) {
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Skipping backward"), [this, deviceId](QString token) {
+            return m_session->webApi().remotePrevious(deviceId, token);
+        });
+        QTimer::singleShot(400, this, [this] {
+            if (m_activeConnectDevice) {
+                detach(runSyncConnectState());
+            }
+        });
+        return;
+    }
     if (m_remote && m_core->skipRemote(false)) {
         return;
     }
@@ -1063,6 +1151,18 @@ bool PlaybackController::skipUnavailable(const Song &song, bool steppingBack)
 
 void PlaybackController::skipForward()
 {
+    if (m_activeConnectDevice) {
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Skipping forward"), [this, deviceId](QString token) {
+            return m_session->webApi().remoteNext(deviceId, token);
+        });
+        QTimer::singleShot(400, this, [this] {
+            if (m_activeConnectDevice) {
+                detach(runSyncConnectState());
+            }
+        });
+        return;
+    }
     if (m_remote && m_core->skipRemote(true)) {
         return;
     }
@@ -1081,6 +1181,16 @@ void PlaybackController::seek(int requestedMs)
     quint32 positionMs = quint32(std::max(requestedMs, 0));
     if (m_durationMs > 0) {
         positionMs = std::min(positionMs, m_durationMs);
+    }
+    if (m_activeConnectDevice) {
+        setLivePosition(positionMs);
+        m_lastConnectPollMs = QDateTime::currentMSecsSinceEpoch();
+        syncMediaSession();
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Seeking playback"), [this, positionMs, deviceId](QString token) {
+            return m_session->webApi().remoteSeek(int(positionMs), deviceId, token);
+        });
+        return;
     }
     if (m_restoredPlayback) {
         m_resumePositionMs = positionMs;
@@ -1128,6 +1238,21 @@ void PlaybackController::setVolume(double requested)
     if (volume == m_volume) {
         return;
     }
+    if (m_activeConnectDevice) {
+        m_volume = volume;
+        if (volume > 0.01) {
+            m_volumeBeforeMute = volume;
+        }
+        emit volumeChanged();
+        if (m_activeConnectDevice->supportsVolume) {
+            const int percent = int(std::lround(volume * 100.0));
+            const QString deviceId = m_activeConnectDevice->id;
+            sendConnectCommand(QStringLiteral("Changing volume"), [this, percent, deviceId](QString token) {
+                return m_session->webApi().remoteSetVolume(percent, deviceId, token);
+            });
+        }
+        return;
+    }
     try {
         m_core->setVolume(float(volume));
     } catch (const SpotifyError &error) {
@@ -1155,6 +1280,17 @@ void PlaybackController::toggleMute()
 
 void PlaybackController::toggleShuffle()
 {
+    if (m_activeConnectDevice) {
+        m_shuffle = !m_shuffle;
+        emit shuffleChanged();
+        syncMediaSession();
+        const bool nextState = m_shuffle;
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Changing shuffle"), [this, nextState, deviceId](QString token) {
+            return m_session->webApi().remoteSetShuffle(nextState, deviceId, token);
+        });
+        return;
+    }
     m_shuffle = !m_shuffle;
     m_history.clear();
     if (m_shuffle) {
@@ -1177,6 +1313,15 @@ void PlaybackController::cycleRepeatMode()
     emit repeatModeChanged();
     emit queueChanged();
     syncMediaSession();
+    if (m_activeConnectDevice) {
+        const QString state = m_repeatMode == RepeatMode::All ? QStringLiteral("context")
+                            : m_repeatMode == RepeatMode::One ? QStringLiteral("track")
+                                                              : QStringLiteral("off");
+        const QString deviceId = m_activeConnectDevice->id;
+        sendConnectCommand(QStringLiteral("Changing repeat mode"), [this, state, deviceId](QString token) {
+            return m_session->webApi().remoteSetRepeat(state, deviceId, token);
+        });
+    }
 }
 
 // --- the playing song ---------------------------------------------------------------------
@@ -1191,7 +1336,7 @@ void PlaybackController::updatePlaybackWorkers()
         m_pollTimer.stop();
     }
 
-    const bool analyse = m_visualizersEnabled && m_playing && m_presentationActive;
+    const bool analyse = !m_activeConnectDevice && m_visualizersEnabled && m_playing && m_presentationActive;
     m_core->setSpectrumEnabled(analyse);
     const bool pulseVisible = isLoadingPulseVisible();
     if (m_analysisActive != analyse || m_loadingPulseWasVisible != pulseVisible) {
@@ -1214,6 +1359,21 @@ void PlaybackController::pollPlayback()
 {
     if (!m_currentSong) {
         m_pollTimer.stop();
+        return;
+    }
+    if (m_activeConnectDevice) {
+        if (m_playing) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            const qint64 elapsed = std::clamp<qint64>(now - m_lastConnectPollMs, 0, 2000);
+            m_lastConnectPollMs = now;
+            quint32 next = m_livePositionMs + quint32(elapsed);
+            if (m_durationMs > 0) {
+                next = std::min(next, m_durationMs);
+            }
+            if (next != m_livePositionMs) {
+                setLivePosition(next);
+            }
+        }
         return;
     }
     syncPositionAndDuration();
@@ -1386,6 +1546,7 @@ void PlaybackController::setShowingLyrics(bool showing)
     m_showingLyrics = showing;
     if (showing) {
         m_showingQueue = false;
+        m_showingDevices = false;
     }
     emit panelsChanged();
 }
@@ -1398,6 +1559,21 @@ void PlaybackController::setShowingQueue(bool showing)
     m_showingQueue = showing;
     if (showing) {
         m_showingLyrics = false;
+        m_showingDevices = false;
+    }
+    emit panelsChanged();
+}
+
+void PlaybackController::setShowingDevices(bool showing)
+{
+    if (m_showingDevices == showing) {
+        return;
+    }
+    m_showingDevices = showing;
+    if (showing) {
+        m_showingLyrics = false;
+        m_showingQueue = false;
+        refreshDevices();
     }
     emit panelsChanged();
 }
@@ -1410,6 +1586,11 @@ void PlaybackController::toggleLyricsPanel()
 void PlaybackController::toggleQueuePanel()
 {
     setShowingQueue(!m_showingQueue);
+}
+
+void PlaybackController::toggleDevicesPanel()
+{
+    setShowingDevices(!m_showingDevices);
 }
 
 // --- sleep timer --------------------------------------------------------------------
@@ -1490,6 +1671,20 @@ void PlaybackController::reset()
 {
     m_saveTimer.stop();
     m_checkpointTimer.stop();
+    m_connectSyncTimer.stop();
+    m_devicesRequest.cancel();
+    m_connectSyncInFlight = false;
+    const bool hadDevices = !m_connectDevices.isEmpty() || m_loadingDevices;
+    const bool hadActiveDevice = m_activeConnectDevice.has_value();
+    m_connectDevices.clear();
+    m_loadingDevices = false;
+    m_activeConnectDevice.reset();
+    if (hadDevices) {
+        emit connectDevicesChanged();
+    }
+    if (hadActiveDevice) {
+        emit connectStateChanged();
+    }
     m_settings->remove(kPlaybackStateKey);
     m_settings->sync();
     m_remote = false;
@@ -1519,6 +1714,7 @@ void PlaybackController::reset()
     clearLyrics();
     m_showingLyrics = true;
     m_showingQueue = false;
+    m_showingDevices = false;
     emit panelsChanged();
     // the new core starts at its own default volume
     try {
@@ -1527,6 +1723,269 @@ void PlaybackController::reset()
     }
     queueDidChange();
     syncMediaSession();
+}
+
+// --- spotify connect ----------------------------------------------------------------
+
+void PlaybackController::refreshDevices()
+{
+    detach(runRefreshDevices(m_devicesRequest.renew()));
+}
+
+void PlaybackController::selectConnectDevice(const QString &deviceId)
+{
+    detach(runSelectConnectDevice(deviceId, m_devicesRequest.renew()));
+}
+
+void PlaybackController::clearActiveConnectDevice(bool syncLocalVolume)
+{
+    m_connectSyncTimer.stop();
+    m_connectSyncInFlight = false;
+    if (!m_activeConnectDevice) {
+        return;
+    }
+    m_activeConnectDevice.reset();
+    if (syncLocalVolume) {
+        const double storedVolume = std::clamp(m_settings->value(kVolumeKey, 0.75).toDouble(), 0.0, 1.0);
+        if (storedVolume != m_volume) {
+            m_volume = storedVolume;
+            emit volumeChanged();
+        }
+        try {
+            m_core->setVolume(float(m_volume));
+        } catch (const SpotifyError &) {
+        }
+    }
+    updatePlaybackWorkers();
+    emit connectStateChanged();
+}
+
+QCoro::Task<> PlaybackController::runRefreshDevices(CancelToken token)
+{
+    if (!m_session->hasLibraryToken() || m_session->libraryNeedsAuthorizationUpgrade()) {
+        if (m_loadingDevices) {
+            m_loadingDevices = false;
+            emit connectDevicesChanged();
+        }
+        co_return;
+    }
+    m_loadingDevices = true;
+    emit connectDevicesChanged();
+    try {
+        const QList<ConnectDevice> devices = co_await m_session->withLibraryAccessToken<QList<ConnectDevice>>(
+            [this](QString accessToken) { return m_session->webApi().devices(accessToken); });
+        if (isCancelled(token)) {
+            co_return;
+        }
+        m_connectDevices = devices;
+        if (m_activeConnectDevice) {
+            const auto found = std::find_if(devices.cbegin(), devices.cend(), [&](const ConnectDevice &d) {
+                return d.id == m_activeConnectDevice->id;
+            });
+            if (found != devices.cend() && *found != *m_activeConnectDevice) {
+                m_activeConnectDevice = *found;
+                emit connectStateChanged();
+            }
+        }
+    } catch (const Cancelled &) {
+        co_return;
+    } catch (const SpotifyError &error) {
+        if (!isCancelled(token)) {
+            reportError(QStringLiteral("Loading Spotify Connect devices"), error.message());
+        }
+    }
+    if (!isCancelled(token)) {
+        m_loadingDevices = false;
+        emit connectDevicesChanged();
+        m_devicesRequest.finish(token);
+    }
+}
+
+QCoro::Task<> PlaybackController::runSelectConnectDevice(QString deviceId, CancelToken token)
+{
+    if (deviceId.isEmpty()) {
+        if (!m_activeConnectDevice) {
+            m_devicesRequest.finish(token);
+            co_return;
+        }
+        const bool wasPlaying = m_playing;
+        const std::optional<Song> song = m_currentSong;
+        const quint32 pos = m_livePositionMs;
+        const QString oldDeviceId = m_activeConnectDevice->id;
+        clearActiveConnectDevice(true);
+        if (wasPlaying) {
+            m_session->withLibraryAccessToken<void>([this, oldDeviceId](QString accessToken) {
+                return m_session->webApi().remotePause(oldDeviceId, accessToken);
+            });
+        }
+        if (song && !song->isLocalFile()) {
+            if (wasPlaying) {
+                startPlayback(*song, false, false, 0, pos);
+            } else {
+                m_playbackNeedsLoad = true;
+                m_resumePositionMs = pos;
+                setCurrentSong(song);
+                setLivePosition(pos);
+                setPlaying(false);
+                setStatus(QStringLiteral("Paused"));
+                syncMediaSession();
+            }
+        }
+        m_devicesRequest.finish(token);
+        co_return;
+    }
+
+    const auto it = std::find_if(m_connectDevices.cbegin(), m_connectDevices.cend(),
+                                 [&](const ConnectDevice &d) { return d.id == deviceId; });
+    if (it == m_connectDevices.cend()) {
+        m_devicesRequest.finish(token);
+        co_return;
+    }
+    const ConnectDevice target = *it;
+    if (target.isRestricted) {
+        reportError(QStringLiteral("Switching device"),
+                    QStringLiteral("“%1” does not allow remote control.").arg(target.name));
+        m_devicesRequest.finish(token);
+        co_return;
+    }
+
+    const bool wasLocal = !m_activeConnectDevice.has_value();
+    const bool wasPlaying = m_playing;
+    const std::optional<Song> song = m_currentSong;
+    const quint32 pos = m_livePositionMs;
+
+    if (wasLocal) {
+        cancelPlaybackRequest();
+        try {
+            m_core->pause();
+        } catch (const SpotifyError &) {
+        }
+    }
+
+    m_activeConnectDevice = target;
+    if (target.supportsVolume) {
+        m_volume = std::clamp(target.volumePercent / 100.0, 0.0, 1.0);
+        emit volumeChanged();
+    }
+    updatePlaybackWorkers();
+    emit connectStateChanged();
+
+    try {
+        if (wasLocal && song && !song->isLocalFile() && wasPlaying) {
+            QStringList uris;
+            const QList<Song> &queue = activeQueue();
+            const int startIndex = std::max(0, currentQueueIndex());
+            for (int i = startIndex; i < queue.size() && uris.size() < 50; ++i) {
+                if (!queue[i].isLocalFile() && !queue[i].uri.isEmpty()) {
+                    uris.append(queue[i].uri);
+                }
+            }
+            if (uris.isEmpty()) {
+                uris.append(song->uri);
+            }
+            co_await m_session->withLibraryAccessToken<void>([this, deviceId, uris, pos](QString accessToken) {
+                return m_session->webApi().remotePlay(deviceId, uris, 0, int(pos), accessToken);
+            });
+        } else {
+            co_await m_session->withLibraryAccessToken<void>([this, deviceId, wasPlaying](QString accessToken) {
+                return m_session->webApi().transferPlayback(deviceId, wasPlaying, accessToken);
+            });
+        }
+        if (isCancelled(token)) {
+            co_return;
+        }
+        m_lastConnectPollMs = QDateTime::currentMSecsSinceEpoch();
+        m_connectSyncTimer.start();
+        co_await runSyncConnectState();
+        co_await runRefreshDevices(token);
+    } catch (const Cancelled &) {
+        co_return;
+    } catch (const SpotifyError &error) {
+        if (!isCancelled(token)) {
+            reportError(QStringLiteral("Switching device"), error.message());
+            if (wasLocal) {
+                clearActiveConnectDevice(true);
+            }
+        }
+    }
+    if (!isCancelled(token)) {
+        m_devicesRequest.finish(token);
+    }
+}
+
+QCoro::Task<> PlaybackController::runSyncConnectState()
+{
+    if (!m_activeConnectDevice || m_connectSyncInFlight
+        || !m_session->hasLibraryToken() || m_session->libraryNeedsAuthorizationUpgrade()) {
+        co_return;
+    }
+    m_connectSyncInFlight = true;
+    const QString expectedDeviceId = m_activeConnectDevice->id;
+    try {
+        const RemotePlaybackState state = co_await m_session->withLibraryAccessToken<RemotePlaybackState>(
+            [this](QString accessToken) { return m_session->webApi().playbackState(accessToken); });
+        if (m_activeConnectDevice && m_activeConnectDevice->id == expectedDeviceId && state.hasState) {
+            applyRemotePlaybackState(state);
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        qCDebug(lcPlayer) << "Syncing Spotify Connect state:" << error.message();
+    }
+    m_connectSyncInFlight = false;
+}
+
+void PlaybackController::applyRemotePlaybackState(const RemotePlaybackState &state)
+{
+    if (state.device && m_activeConnectDevice && state.device->id == m_activeConnectDevice->id) {
+        if (*state.device != *m_activeConnectDevice) {
+            m_activeConnectDevice = *state.device;
+            emit connectStateChanged();
+        }
+        if (state.device->supportsVolume) {
+            const double remoteVol = std::clamp(state.device->volumePercent / 100.0, 0.0, 1.0);
+            if (std::abs(remoteVol - m_volume) > 0.015) {
+                m_volume = remoteVol;
+                emit volumeChanged();
+            }
+        }
+    }
+    if (state.item && (!m_currentSong || m_currentSong->uri != state.item->uri)) {
+        m_playbackNeedsLoad = false;
+        m_restoredPlayback = false;
+        setCurrentSong(state.item, 0);
+        setDuration(quint32(std::max(0, state.item->durationMs)));
+        loadLyrics(*state.item);
+    }
+    m_lastConnectPollMs = QDateTime::currentMSecsSinceEpoch();
+    setLivePosition(quint32(std::max(0, state.progressMs)));
+    if (state.isPlaying != m_playing) {
+        setPlaying(state.isPlaying);
+        setStatus(state.isPlaying ? QStringLiteral("Playing") : QStringLiteral("Paused"));
+    }
+    if (state.shuffleState != m_shuffle) {
+        m_shuffle = state.shuffleState;
+        emit shuffleChanged();
+    }
+    const RepeatMode nextRepeat = state.repeatState == QLatin1StringView("context") ? RepeatMode::All
+                                : state.repeatState == QLatin1StringView("track")   ? RepeatMode::One
+                                                                                    : RepeatMode::Off;
+    if (nextRepeat != m_repeatMode) {
+        m_repeatMode = nextRepeat;
+        emit repeatModeChanged();
+    }
+    syncMediaSession();
+}
+
+void PlaybackController::sendConnectCommand(const QString &context, std::function<QCoro::Task<>(QString)> call)
+{
+    detach([this, context, call = std::move(call)]() -> QCoro::Task<> {
+        try {
+            co_await m_session->withLibraryAccessToken<void>(call);
+        } catch (const Cancelled &) {
+        } catch (const SpotifyError &error) {
+            reportError(context, error.message());
+        }
+    }());
 }
 
 } // namespace swiftify

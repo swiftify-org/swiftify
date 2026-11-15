@@ -665,5 +665,20 @@
   "not a spotify artist: %1": "Этот адрес не является страницей исполнителя Spotify: %1",
   "the artist could not be read: %1": "Не удалось обработать сведения об исполнителе: %1",
   "a required string was missing": "Отсутствует обязательный параметр",
-  "a string was not valid utf-8": "Текст содержит некорректную последовательность UTF-8"
+  "a string was not valid utf-8": "Текст содержит некорректную последовательность UTF-8",
+  "Playing on %1": "Воспроизведение на %1",
+  "Connect to a device": "Подключиться к устройству",
+  "Devices": "Устройства",
+  "Refresh devices": "Обновить список устройств",
+  "Current Device": "Текущее устройство",
+  "This Computer": "Этот компьютер",
+  "Playing locally": "Локальное воспроизведение",
+  "Swiftify": "Swiftify",
+  "Play locally in Swiftify": "Воспроизводить локально в Swiftify",
+  "Reconnect your Spotify library to grant playback control permissions for Spotify Connect.": "Переподключите медиатеку Spotify, чтобы выдать права управления воспроизведением для Spotify Connect.",
+  "Spotify Connect": "Spotify Connect",
+  "%1 · Restricted": "%1 · Ограничено",
+  "%1 · %2%": "%1 · %2%",
+  "No other devices found": "Другие устройства не найдены",
+  "Open Spotify on another device on your account to transfer playback.": "Откройте Spotify на другом устройстве с вашим аккаунтом, чтобы перенести воспроизведение."
 }

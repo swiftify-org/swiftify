@@ -222,4 +222,45 @@ std::optional<Song> wrappedTrack(const QJsonObject &entry)
     return legacy.isObject() ? track(legacy.toObject()) : std::nullopt;
 }
 
+std::optional<ConnectDevice> connectDevice(const QJsonObject &object)
+{
+    const QString id = object.value(QStringLiteral("id")).toString();
+    const QString name = object.value(QStringLiteral("name")).toString();
+    if (id.isEmpty() || name.isEmpty()) {
+        return std::nullopt;
+    }
+    ConnectDevice device;
+    device.id = id;
+    device.name = name;
+    device.type = object.value(QStringLiteral("type")).toString();
+    device.isActive = object.value(QStringLiteral("is_active")).toBool();
+    device.isPrivateSession = object.value(QStringLiteral("is_private_session")).toBool();
+    device.isRestricted = object.value(QStringLiteral("is_restricted")).toBool();
+    device.supportsVolume = object.value(QStringLiteral("supports_volume")).toBool();
+    device.volumePercent = std::clamp(object.value(QStringLiteral("volume_percent")).toInt(), 0, 100);
+    return device;
+}
+
+RemotePlaybackState remotePlaybackState(const QJsonObject &object)
+{
+    RemotePlaybackState state;
+    if (object.isEmpty()) {
+        return state;
+    }
+    state.hasState = true;
+    const QJsonValue deviceValue = object.value(QStringLiteral("device"));
+    if (deviceValue.isObject()) {
+        state.device = connectDevice(deviceValue.toObject());
+    }
+    const QJsonValue itemValue = object.value(QStringLiteral("item"));
+    if (itemValue.isObject()) {
+        state.item = track(itemValue.toObject());
+    }
+    state.isPlaying = object.value(QStringLiteral("is_playing")).toBool();
+    state.progressMs = std::max(0, object.value(QStringLiteral("progress_ms")).toInt());
+    state.shuffleState = object.value(QStringLiteral("shuffle_state")).toBool();
+    state.repeatState = object.value(QStringLiteral("repeat_state")).toString(QStringLiteral("off"));
+    return state;
+}
+
 } // namespace swiftify::json

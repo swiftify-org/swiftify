@@ -142,4 +142,33 @@ Song Song::fromJson(const QJsonObject &object)
     return song;
 }
 
+QString ConnectDevice::symbol() const
+{
+    const QString normalized = type.toLower();
+    if (normalized == QLatin1StringView("computer")) {
+        return QStringLiteral("computer");
+    }
+    if (normalized == QLatin1StringView("smartphone")) {
+        return QStringLiteral("smartphone");
+    }
+    if (normalized == QLatin1StringView("speaker") || normalized == QLatin1StringView("avr")
+        || normalized == QLatin1StringView("stb") || normalized == QLatin1StringView("audiodongle")
+        || normalized == QLatin1StringView("castaudio")) {
+        return QStringLiteral("speaker");
+    }
+    if (normalized == QLatin1StringView("tv") || normalized == QLatin1StringView("castvideo")) {
+        return QStringLiteral("tv");
+    }
+    if (normalized == QLatin1StringView("gameconsole")) {
+        return QStringLiteral("sports_esports");
+    }
+    if (normalized == QLatin1StringView("automobile")) {
+        return QStringLiteral("directions_car");
+    }
+    if (normalized == QLatin1StringView("smartwatch")) {
+        return QStringLiteral("watch");
+    }
+    return QStringLiteral("devices");
+}
+
 } // namespace swiftify

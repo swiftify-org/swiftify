@@ -25,6 +25,8 @@
 #include <QUrl>
 #include <QtQml/qqmlregistration.h>
 
+#include <optional>
+
 namespace swiftify {
 
 struct Artist {
@@ -195,9 +197,49 @@ struct SearchResults {
     bool isEmpty() const { return songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && playlists.isEmpty(); }
 };
 
+struct ConnectDevice {
+    Q_GADGET
+    QML_VALUE_TYPE(connectDevice)
+    Q_PROPERTY(QString id MEMBER id FINAL)
+    Q_PROPERTY(QString name MEMBER name FINAL)
+    Q_PROPERTY(QString type MEMBER type FINAL)
+    Q_PROPERTY(bool isActive MEMBER isActive FINAL)
+    Q_PROPERTY(bool isPrivateSession MEMBER isPrivateSession FINAL)
+    Q_PROPERTY(bool isRestricted MEMBER isRestricted FINAL)
+    Q_PROPERTY(bool supportsVolume MEMBER supportsVolume FINAL)
+    Q_PROPERTY(int volumePercent MEMBER volumePercent FINAL)
+    Q_PROPERTY(bool valid READ isValid FINAL)
+    Q_PROPERTY(QString symbol READ symbol FINAL)
+
+public:
+    QString id;
+    QString name;
+    QString type;
+    bool isActive = false;
+    bool isPrivateSession = false;
+    bool isRestricted = false;
+    bool supportsVolume = false;
+    int volumePercent = 0;
+
+    bool isValid() const { return !id.isEmpty(); }
+    bool operator==(const ConnectDevice &) const = default;
+    QString symbol() const;
+};
+
+struct RemotePlaybackState {
+    bool hasState = false;
+    std::optional<ConnectDevice> device;
+    std::optional<Song> item;
+    bool isPlaying = false;
+    int progressMs = 0;
+    bool shuffleState = false;
+    QString repeatState;
+};
+
 } // namespace swiftify
 
 Q_DECLARE_METATYPE(swiftify::Song)
 Q_DECLARE_METATYPE(swiftify::Playlist)
 Q_DECLARE_METATYPE(swiftify::Album)
 Q_DECLARE_METATYPE(swiftify::Artist)
+Q_DECLARE_METATYPE(swiftify::ConnectDevice)

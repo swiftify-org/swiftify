@@ -658,5 +658,20 @@
   "not a spotify artist: %1": "Kein Spotify-Interpret: %1",
   "the artist could not be read: %1": "Der Interpret konnte nicht gelesen werden: %1",
   "a required string was missing": "Ein erforderlicher String fehlte",
-  "a string was not valid utf-8": "Ein String war kein gültiges UTF-8"
+  "a string was not valid utf-8": "Ein String war kein gültiges UTF-8",
+  "Playing on %1": "Wiedergabe auf %1",
+  "Connect to a device": "Mit einem Gerät verbinden",
+  "Devices": "Geräte",
+  "Refresh devices": "Geräte aktualisieren",
+  "Current Device": "Aktuelles Gerät",
+  "This Computer": "Dieser Computer",
+  "Playing locally": "Lokale Wiedergabe",
+  "Swiftify": "Swiftify",
+  "Play locally in Swiftify": "Lokal in Swiftify wiedergeben",
+  "Reconnect your Spotify library to grant playback control permissions for Spotify Connect.": "Verbinde deine Spotify-Bibliothek erneut, um Wiedergabesteuerungsrechte für Spotify Connect zu gewähren.",
+  "Spotify Connect": "Spotify Connect",
+  "%1 · Restricted": "%1 · Eingeschränkt",
+  "%1 · %2%": "%1 · %2%",
+  "No other devices found": "Keine anderen Geräte gefunden",
+  "Open Spotify on another device on your account to transfer playback.": "Öffne Spotify auf einem anderen Gerät mit deinem Konto, um die Wiedergabe zu übertragen."
 }

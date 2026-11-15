@@ -25,6 +25,7 @@
 #include "playback/PlaybackController.h"
 #include "playback/PlaybackState.h"
 #include "spotify/CredentialStore.h"
+#include "spotify/SpotifyJson.h"
 #include "spotify/SpotifySession.h"
 #if defined(SWIFTIFY_HAS_DBUS) && defined(Q_OS_LINUX)
 #include "system/dbus/Mpris.h"
@@ -777,6 +778,72 @@ private slots:
         QCOMPARE(mpris.playbackStatus(), QStringLiteral("Playing"));
     }
 #endif
+
+    void connectDeviceJsonAndSymbols()
+    {
+        const QJsonObject speakerObj {
+            {QStringLiteral("id"), QStringLiteral("dev-1")},
+            {QStringLiteral("name"), QStringLiteral("Living Room Speaker")},
+            {QStringLiteral("type"), QStringLiteral("Speaker")},
+            {QStringLiteral("is_active"), true},
+            {QStringLiteral("is_restricted"), false},
+            {QStringLiteral("supports_volume"), true},
+            {QStringLiteral("volume_percent"), 65},
+        };
+        const auto device = json::connectDevice(speakerObj);
+        QVERIFY(device.has_value());
+        QCOMPARE(device->id, QStringLiteral("dev-1"));
+        QCOMPARE(device->name, QStringLiteral("Living Room Speaker"));
+        QCOMPARE(device->symbol(), QStringLiteral("speaker"));
+        QCOMPARE(device->volumePercent, 65);
+        QVERIFY(device->isActive);
+        QVERIFY(device->supportsVolume);
+
+        ConnectDevice phone;
+        phone.id = QStringLiteral("dev-2");
+        phone.name = QStringLiteral("Phone");
+        phone.type = QStringLiteral("Smartphone");
+        QCOMPARE(phone.symbol(), QStringLiteral("smartphone"));
+
+        const QJsonObject stateObj {
+            {QStringLiteral("device"), speakerObj},
+            {QStringLiteral("is_playing"), true},
+            {QStringLiteral("progress_ms"), 42000},
+            {QStringLiteral("shuffle_state"), true},
+            {QStringLiteral("repeat_state"), QStringLiteral("context")},
+        };
+        const RemotePlaybackState state = json::remotePlaybackState(stateObj);
+        QVERIFY(state.hasState);
+        QVERIFY(state.device.has_value());
+        QCOMPARE(state.device->id, QStringLiteral("dev-1"));
+        QVERIFY(state.isPlaying);
+        QCOMPARE(state.progressMs, 42000);
+        QVERIFY(state.shuffleState);
+        QCOMPARE(state.repeatState, QStringLiteral("context"));
+    }
+
+    void devicesPanelIsMutuallyExclusiveWithLyricsAndQueue()
+    {
+        Rig rig;
+        QVERIFY(rig.player.isShowingLyrics());
+        QVERIFY(!rig.player.isShowingQueue());
+        QVERIFY(!rig.player.isShowingDevices());
+
+        rig.player.toggleDevicesPanel();
+        QVERIFY(rig.player.isShowingDevices());
+        QVERIFY(!rig.player.isShowingLyrics());
+        QVERIFY(!rig.player.isShowingQueue());
+
+        rig.player.toggleQueuePanel();
+        QVERIFY(rig.player.isShowingQueue());
+        QVERIFY(!rig.player.isShowingDevices());
+        QVERIFY(!rig.player.isShowingLyrics());
+
+        rig.player.toggleLyricsPanel();
+        QVERIFY(rig.player.isShowingLyrics());
+        QVERIFY(!rig.player.isShowingDevices());
+        QVERIFY(!rig.player.isShowingQueue());
+    }
 };
 
 QTEST_GUILESS_MAIN(PlaybackTest)

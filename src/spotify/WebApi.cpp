@@ -511,4 +511,134 @@ QCoro::Task<QHash<QString, bool>> WebApi::savedStatuses(QStringList uris, QStrin
     co_return result;
 }
 
+namespace {
+
+QUrlQuery deviceQuery(const QString &deviceId, QUrlQuery query = {})
+{
+    if (!deviceId.isEmpty()) {
+        query.addQueryItem(QStringLiteral("device_id"), deviceId);
+    }
+    return query;
+}
+
+} // namespace
+
+QCoro::Task<QList<ConnectDevice>> WebApi::devices(QString accessToken)
+{
+    const QJsonObject root = (co_await requestJson(
+        apiUrl(QStringLiteral("/v1/me/player/devices")), "GET", accessToken)).object();
+    QList<ConnectDevice> result;
+    const QJsonArray list = root.value(QStringLiteral("devices")).toArray();
+    result.reserve(list.size());
+    for (const QJsonValue &value : list) {
+        if (const auto device = json::connectDevice(value.toObject())) {
+            result.append(*device);
+        }
+    }
+    co_return result;
+}
+
+QCoro::Task<RemotePlaybackState> WebApi::playbackState(QString accessToken)
+{
+    const QByteArray data = co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player")), "GET", accessToken);
+    if (data.trimmed().isEmpty()) {
+        co_return RemotePlaybackState {};
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(data);
+    if (!document.isObject()) {
+        co_return RemotePlaybackState {};
+    }
+    co_return json::remotePlaybackState(document.object());
+}
+
+QCoro::Task<> WebApi::transferPlayback(QString deviceId, bool play, QString accessToken)
+{
+    const QByteArray body = jsonBody({
+        {QStringLiteral("device_ids"), QJsonArray {deviceId}},
+        {QStringLiteral("play"), play},
+    });
+    co_await requestData(apiUrl(QStringLiteral("/v1/me/player")), "PUT", accessToken, body);
+}
+
+QCoro::Task<> WebApi::remotePlay(QString deviceId, QStringList uris, int offsetPosition, int positionMs,
+                                 QString accessToken)
+{
+    QJsonObject payload;
+    if (!uris.isEmpty()) {
+        QJsonArray uriArray;
+        for (const QString &uri : uris) {
+            uriArray.append(uri);
+        }
+        payload.insert(QStringLiteral("uris"), uriArray);
+        if (offsetPosition > 0 && offsetPosition < uris.size()) {
+            payload.insert(QStringLiteral("offset"), QJsonObject {{QStringLiteral("position"), offsetPosition}});
+        }
+        if (positionMs > 0) {
+            payload.insert(QStringLiteral("position_ms"), positionMs);
+        }
+    }
+    const QByteArray body = payload.isEmpty() ? QByteArray {} : jsonBody(payload);
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/play"), deviceQuery(deviceId)),
+        "PUT", accessToken, body, body.isEmpty() ? QByteArray {} : QByteArray("application/json"));
+}
+
+QCoro::Task<> WebApi::remotePause(QString deviceId, QString accessToken)
+{
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/pause"), deviceQuery(deviceId)),
+        "PUT", accessToken);
+}
+
+QCoro::Task<> WebApi::remoteNext(QString deviceId, QString accessToken)
+{
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/next"), deviceQuery(deviceId)),
+        "POST", accessToken);
+}
+
+QCoro::Task<> WebApi::remotePrevious(QString deviceId, QString accessToken)
+{
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/previous"), deviceQuery(deviceId)),
+        "POST", accessToken);
+}
+
+QCoro::Task<> WebApi::remoteSeek(int positionMs, QString deviceId, QString accessToken)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("position_ms"), QString::number(std::max(0, positionMs)));
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/seek"), deviceQuery(deviceId, query)),
+        "PUT", accessToken);
+}
+
+QCoro::Task<> WebApi::remoteSetVolume(int volumePercent, QString deviceId, QString accessToken)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("volume_percent"), QString::number(std::clamp(volumePercent, 0, 100)));
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/volume"), deviceQuery(deviceId, query)),
+        "PUT", accessToken);
+}
+
+QCoro::Task<> WebApi::remoteSetShuffle(bool state, QString deviceId, QString accessToken)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("state"), state ? QStringLiteral("true") : QStringLiteral("false"));
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/shuffle"), deviceQuery(deviceId, query)),
+        "PUT", accessToken);
+}
+
+QCoro::Task<> WebApi::remoteSetRepeat(QString state, QString deviceId, QString accessToken)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("state"), state);
+    co_await requestData(
+        apiUrl(QStringLiteral("/v1/me/player/repeat"), deviceQuery(deviceId, query)),
+        "PUT", accessToken);
+}
+
 } // namespace swiftify

@@ -37,5 +37,7 @@ std::optional<Artist> artist(const QJsonObject &object);
 std::optional<Song> track(const QJsonObject &object, const Album &fallbackAlbum = {});
 /// the "item" of a playlist, saved-track or history entry, or its older "track"
 std::optional<Song> wrappedTrack(const QJsonObject &entry);
+std::optional<ConnectDevice> connectDevice(const QJsonObject &object);
+RemotePlaybackState remotePlaybackState(const QJsonObject &object);
 
 } // namespace swiftify::json

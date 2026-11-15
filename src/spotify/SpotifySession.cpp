@@ -49,6 +49,8 @@ const QStringList SpotifySession::kLibraryScopes {
     QStringLiteral("user-read-recently-played"),
     QStringLiteral("user-library-read"),
     QStringLiteral("user-library-modify"),
+    QStringLiteral("user-read-playback-state"),
+    QStringLiteral("user-modify-playback-state"),
     QStringLiteral("ugc-image-upload"),
 };
 

@@ -35,7 +35,7 @@ FocusScope {
 
     readonly property bool lyricsAvailable: Player.loadingLyrics || (Player.hasLyrics && Player.lyrics.count > 0)
     /// the switch's segments, in order; "" is the artwork alone
-    readonly property list<string> panels: ["", "lyrics", "queue", "sleep", "audio"]
+    readonly property list<string> panels: ["", "lyrics", "queue", "devices", "sleep", "audio"]
 
     /// what the layout makes room for beside the artwork
     property string panel
@@ -476,6 +476,7 @@ FocusScope {
                 Segment { symbol: "image"; tooltip: qsTr("Artwork") },
                 Segment { symbol: "lyrics"; tooltip: qsTr("Lyrics"); enabled: root.lyricsAvailable },
                 Segment { symbol: "queue_music"; tooltip: qsTr("Playing Next") },
+                Segment { symbol: Player.remoteDeviceActive ? "cast_connected" : "devices"; tooltip: qsTr("Devices") },
                 Segment { symbol: "bedtime"; tooltip: qsTr("Sleep Timer") },
                 Segment { symbol: "tune"; tooltip: qsTr("Sound") }
             ]
@@ -546,6 +547,7 @@ FocusScope {
                 switch (root.shownPanel) {
                 case "lyrics": return lyrics
                 case "queue": return queue
+                case "devices": return devices
                 case "sleep": return sleep
                 case "audio": return sound
                 default: return null
@@ -573,6 +575,13 @@ FocusScope {
         id: queue
         ImmersiveQueue {
             scheme: root.scheme
+        }
+    }
+    Component {
+        id: devices
+        DevicesPanel {
+            scheme: root.scheme
+            Component.onCompleted: Player.refreshDevices()
         }
     }
     Component {

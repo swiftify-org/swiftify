@@ -30,6 +30,7 @@
 #include <QTimer>
 #include <QtQml/qqmlregistration.h>
 
+#include <functional>
 #include <limits>
 #include <optional>
 
@@ -81,6 +82,12 @@ class PlaybackController : public QObject {
 
     Q_PROPERTY(bool showingLyrics READ isShowingLyrics WRITE setShowingLyrics NOTIFY panelsChanged FINAL)
     Q_PROPERTY(bool showingQueue READ isShowingQueue WRITE setShowingQueue NOTIFY panelsChanged FINAL)
+    Q_PROPERTY(bool showingDevices READ isShowingDevices WRITE setShowingDevices NOTIFY panelsChanged FINAL)
+
+    Q_PROPERTY(QList<swiftify::ConnectDevice> connectDevices READ connectDevices NOTIFY connectDevicesChanged FINAL)
+    Q_PROPERTY(swiftify::ConnectDevice activeConnectDevice READ activeConnectDevice NOTIFY connectStateChanged FINAL)
+    Q_PROPERTY(bool remoteDeviceActive READ isRemoteDeviceActive NOTIFY connectStateChanged FINAL)
+    Q_PROPERTY(bool loadingDevices READ isLoadingDevices NOTIFY connectDevicesChanged FINAL)
 
     Q_PROPERTY(bool sleepTimerRunning READ isSleepTimerRunning NOTIFY sleepTimerChanged FINAL)
     Q_PROPERTY(QDateTime sleepTimerDeadline READ sleepTimerDeadline NOTIFY sleepTimerChanged FINAL)
@@ -142,8 +149,15 @@ public:
 
     bool isShowingLyrics() const { return m_showingLyrics; }
     bool isShowingQueue() const { return m_showingQueue; }
+    bool isShowingDevices() const { return m_showingDevices; }
     void setShowingLyrics(bool showing);
     void setShowingQueue(bool showing);
+    void setShowingDevices(bool showing);
+
+    QList<ConnectDevice> connectDevices() const { return m_connectDevices; }
+    ConnectDevice activeConnectDevice() const { return m_activeConnectDevice.value_or(ConnectDevice {}); }
+    bool isRemoteDeviceActive() const { return m_activeConnectDevice.has_value(); }
+    bool isLoadingDevices() const { return m_loadingDevices; }
 
     bool isSleepTimerRunning() const { return m_sleepTimerDeadline.isValid(); }
     QDateTime sleepTimerDeadline() const { return m_sleepTimerDeadline; }
@@ -198,6 +212,9 @@ public:
     Q_INVOKABLE void cycleRepeatMode();
     Q_INVOKABLE void toggleLyricsPanel();
     Q_INVOKABLE void toggleQueuePanel();
+    Q_INVOKABLE void toggleDevicesPanel();
+    Q_INVOKABLE void refreshDevices();
+    Q_INVOKABLE void selectConnectDevice(const QString &deviceId);
     Q_INVOKABLE void seekToLyricLine(int index);
     Q_INVOKABLE void startSleepTimer(int seconds, const QString &fade);
     Q_INVOKABLE void cancelSleepTimer();
@@ -222,6 +239,8 @@ signals:
     void lyricsChanged();
     void activeLyricIndexChanged();
     void panelsChanged();
+    void connectDevicesChanged();
+    void connectStateChanged();
     void sleepTimerChanged();
     void analysisActiveChanged();
     /// a song started from search results, for the search history
@@ -284,6 +303,13 @@ private:
     /// volume changed elsewhere (e.g. on a phone via Spotify Connect)
     void followRemoteVolume(float volume);
 
+    QCoro::Task<> runRefreshDevices(CancelToken token);
+    QCoro::Task<> runSelectConnectDevice(QString deviceId, CancelToken token);
+    QCoro::Task<> runSyncConnectState();
+    void applyRemotePlaybackState(const RemotePlaybackState &state);
+    void sendConnectCommand(const QString &context, std::function<QCoro::Task<>(QString)> call);
+    void clearActiveConnectDevice(bool syncLocalVolume = true);
+
     PlaybackCore *m_core;
     SpotifySession *m_session;
     Settings *m_settings;
@@ -336,6 +362,15 @@ private:
     int m_activeLyricIndex = -1;
     bool m_showingLyrics = true;
     bool m_showingQueue = false;
+    bool m_showingDevices = false;
+
+    QList<ConnectDevice> m_connectDevices;
+    std::optional<ConnectDevice> m_activeConnectDevice;
+    bool m_loadingDevices = false;
+    TaskSlot m_devicesRequest;
+    QTimer m_connectSyncTimer;
+    qint64 m_lastConnectPollMs = 0;
+    bool m_connectSyncInFlight = false;
 
     QTimer m_sleepTimer;
     QDateTime m_sleepTimerDeadline;

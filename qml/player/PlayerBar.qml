@@ -463,6 +463,18 @@ Item {
             tooltip: qsTr("Playing Next")
             onClicked: Player.toggleQueuePanel()
         }
+        IconButton {
+            anchors.verticalCenter: parent.verticalCenter
+            scheme: root.scheme
+            symbol: Player.remoteDeviceActive ? "cast_connected" : "devices"
+            size: root.buttonSize
+            iconSize: root.tiny ? 18 : 20
+            toggled: Player.showingDevices || Player.remoteDeviceActive
+            tooltip: Player.remoteDeviceActive
+                ? qsTr("Playing on %1").arg(Player.activeConnectDevice.name)
+                : qsTr("Connect to a device")
+            onClicked: Player.toggleDevicesPanel()
+        }
         VolumeControl {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme

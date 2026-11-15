@@ -76,6 +76,18 @@ public:
     /// at most 40 uris are checked
     QCoro::Task<QHash<QString, bool>> savedStatuses(QStringList uris, QString accessToken);
 
+    QCoro::Task<QList<ConnectDevice>> devices(QString accessToken);
+    QCoro::Task<RemotePlaybackState> playbackState(QString accessToken);
+    QCoro::Task<> transferPlayback(QString deviceId, bool play, QString accessToken);
+    QCoro::Task<> remotePlay(QString deviceId, QStringList uris, int offsetPosition, int positionMs, QString accessToken);
+    QCoro::Task<> remotePause(QString deviceId, QString accessToken);
+    QCoro::Task<> remoteNext(QString deviceId, QString accessToken);
+    QCoro::Task<> remotePrevious(QString deviceId, QString accessToken);
+    QCoro::Task<> remoteSeek(int positionMs, QString deviceId, QString accessToken);
+    QCoro::Task<> remoteSetVolume(int volumePercent, QString deviceId, QString accessToken);
+    QCoro::Task<> remoteSetShuffle(bool state, QString deviceId, QString accessToken);
+    QCoro::Task<> remoteSetRepeat(QString state, QString deviceId, QString accessToken);
+
     static QUrl apiUrl(const QString &path, const QUrlQuery &query = {});
 
 private:
