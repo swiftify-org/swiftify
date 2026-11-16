@@ -19,6 +19,7 @@
 #pragma once
 
 #include "theme/MaterialScheme.h"
+#include "theme/CustomThemes.h"
 #include "theme/Themes.h"
 
 #include <QColor>
@@ -45,6 +46,7 @@ class Theme : public QObject {
     QML_SINGLETON
 
     Q_PROPERTY(swiftify::MaterialScheme *colors READ colors CONSTANT FINAL)
+    Q_PROPERTY(swiftify::CustomThemes *customThemes READ customThemes CONSTANT FINAL)
     Q_PROPERTY(bool dark READ dark NOTIFY schemeChanged FINAL)
     Q_PROPERTY(bool usingSystemScheme READ usingSystemScheme NOTIFY schemeChanged FINAL)
     Q_PROPERTY(QString systemSchemePath READ systemSchemePath NOTIFY schemeChanged FINAL)
@@ -62,6 +64,7 @@ public:
     static Theme *create(QQmlEngine *, QJSEngine *);
 
     MaterialScheme *colors() const { return m_colors; }
+    CustomThemes *customThemes() const { return m_custom; }
     bool dark() const { return m_colors->dark(); }
     bool usingSystemScheme() const { return m_usingSystemScheme; }
     /// the matugen file in use or looked for
@@ -93,9 +96,12 @@ private:
 
     Settings *m_settings;
     MaterialScheme *m_colors;
+    CustomThemes *m_custom;
     QFileSystemWatcher m_watcher;
     /// matugen replaces the file, which fires several events in a row
     QTimer m_reloadDebounce;
+    /// a colour being dragged is applied at most once a frame
+    QTimer m_draftTimer;
     bool m_usingSystemScheme = false;
     QString m_systemSchemePath;
     std::optional<MaterialScheme::Roles> m_systemRoles;
