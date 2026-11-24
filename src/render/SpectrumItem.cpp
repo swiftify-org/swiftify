@@ -964,7 +964,8 @@ QSGNode *SpectrumItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
     auto *material = static_cast<SpectrumBarMaterial *>(bars->material());
     auto *haloMaterial = static_cast<SpectrumHaloMaterial *>(halo->material());
-    const float pixelsPerPoint = window() ? float(window()->effectiveDevicePixelRatio()) : 1.0f;
+    const float zoom = Settings::instance() ? float(Settings::instance()->zoom()) : 1.0f;
+    const float pixelsPerPoint = (window() ? float(window()->effectiveDevicePixelRatio()) : 1.0f) * (zoom > 0 ? zoom : 1.0f);
     SpectrumCut cut;
     if (m_style.radial && m_cutWaves > 0.5) {
         cut = {float(width()) / 2, float(height()) / 2, float(m_cutRadius), float(m_cutAmplitude), float(m_cutWaves),

@@ -280,6 +280,9 @@ Item {
             anchors.topMargin: 7
             anchors.bottom: seek.top
             layer.enabled: blurAmount > 0.001
+            layer.textureSize: Qt.size(Math.ceil(width * (Settings.zoom > 0 ? Settings.zoom : 1) * (Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1)),
+                                       Math.ceil(height * (Settings.zoom > 0 ? Settings.zoom : 1) * (Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1)))
+            layer.smooth: true
             layer.effect: MultiEffect {
                 blurEnabled: true
                 blur: info.blurAmount

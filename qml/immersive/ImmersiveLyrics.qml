@@ -82,6 +82,9 @@ Item {
 
 
         layer.enabled: true
+        layer.textureSize: Qt.size(Math.ceil(width * (Settings.zoom > 0 ? Settings.zoom : 1) * (Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1)),
+                                   Math.ceil(height * (Settings.zoom > 0 ? Settings.zoom : 1) * (Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1)))
+        layer.smooth: true
         layer.effect: ShaderEffect {
             property variant source
             property real edge: 0.08
