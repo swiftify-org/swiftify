@@ -535,16 +535,50 @@ bool CustomThemes::remove(const QString &id)
     if (!find(id)) {
         return fail(tr("That theme does not exist"));
     }
-    const QStringList filePaths = themeFilePathsForId(m_directory, id);
+    QStringList filePaths = themeFilePathsForId(m_directory, id);
     if (filePaths.isEmpty()) {
         return fail(tr("Could not delete the theme"));
     }
 
+    std::sort(filePaths.begin(), filePaths.end(), [](const QString &a, const QString &b) {
+        return QString::compare(a, b, Qt::CaseSensitive) < 0;
+    });
+
+    // Preserve the first valid readable theme until all duplicates are gone.
+    QString authoritativePath;
+    for (const QString &path : filePaths) {
+        if (!QFileInfo(path).isReadable()) {
+            continue;
+        }
+        QString error;
+        if (readFile(path, id, error)) {
+            authoritativePath = path;
+            break;
+        }
+    }
+
     for (const QString &filePath : filePaths) {
+        if (filePath == authoritativePath) {
+            continue;
+        }
         if (!QFile::remove(filePath)) {
             qCWarning(lcCustomThemes) << "could not delete theme file" << filePath;
         }
     }
+
+    if (!authoritativePath.isEmpty()) {
+        const QStringList remaining = themeFilePathsForId(m_directory, id);
+        for (const QString &path : remaining) {
+            if (path != authoritativePath) {
+                return fail(tr("Could not delete the theme"));
+            }
+        }
+
+        if (!QFile::remove(authoritativePath)) {
+            qCWarning(lcCustomThemes) << "could not delete theme file" << authoritativePath;
+        }
+    }
+
     if (!themeFilePathsForId(m_directory, id).isEmpty()) {
         return fail(tr("Could not delete the theme"));
     }

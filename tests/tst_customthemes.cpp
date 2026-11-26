@@ -21,12 +21,22 @@
 #include "theme/Theme.h"
 #include "theme/Themes.h"
 
+#include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <string>
+#endif
 
 using namespace swiftify;
 
@@ -59,6 +69,40 @@ QString optionName(const Theme &theme, const QString &id)
     }
     return {};
 }
+
+#ifdef Q_OS_WIN
+class ScopedWinHandle {
+public:
+    explicit ScopedWinHandle(HANDLE handle) noexcept
+        : m_handle(handle)
+    {
+    }
+
+    ~ScopedWinHandle()
+    {
+        reset();
+    }
+
+    ScopedWinHandle(const ScopedWinHandle &) = delete;
+    ScopedWinHandle &operator=(const ScopedWinHandle &) = delete;
+
+    bool isValid() const noexcept
+    {
+        return m_handle != INVALID_HANDLE_VALUE;
+    }
+
+    void reset() noexcept
+    {
+        if (isValid()) {
+            CloseHandle(m_handle);
+            m_handle = INVALID_HANDLE_VALUE;
+        }
+    }
+
+private:
+    HANDLE m_handle;
+};
+#endif
 
 } // namespace
 
@@ -498,6 +542,168 @@ private slots:
 
         QVERIFY(!store.find(kGoodId));
         QCOMPARE(jsonFiles(dir.path()), 0);
+    }
+
+    void failedDuplicateRemovalKeepsAuthoritativeTheme()
+    {
+#ifdef Q_OS_WIN
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString alphaPath =
+            storedThemePath(dir.path(), QStringLiteral("Alpha"), kGoodId);
+        const QString zuluPath =
+            storedThemePath(dir.path(), QStringLiteral("Zulu"), kGoodId);
+
+        const QByteArray alphaJson =
+            R"({"schema":1,"name":"Alpha","light":{"primary":"#112233"}})";
+        const QByteArray zuluJson =
+            R"({"schema":1,"name":"Zulu","light":{"primary":"#abcdef"}})";
+
+        QVERIFY(writeFile(alphaPath, alphaJson));
+        QVERIFY(writeFile(zuluPath, zuluJson));
+
+        {
+            QFile file(alphaPath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), alphaJson);
+        }
+        {
+            QFile file(zuluPath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), zuluJson);
+        }
+
+        CustomThemes store(dir.path());
+        QCOMPARE(store.families().size(), 1);
+
+        const themes::Family *family = store.find(kGoodId);
+        QVERIFY(family);
+        QCOMPARE(family->name, QStringLiteral("Alpha"));
+        QCOMPARE(family->light.primary, QRgb(0xff112233));
+
+        const QString originalName = family->name;
+        const QRgb originalPrimary = family->light.primary;
+        const QString originalId = family->id;
+        const auto originalFamiliesSize = store.families().size();
+        const int originalRevision = store.revision();
+        const int originalDraftVersion = store.draftVersion();
+        const bool originalEditing = store.editing();
+
+        QSignalSpy errorSpy(&store, &CustomThemes::errorChanged);
+        QVERIFY(errorSpy.isValid());
+
+        QSignalSpy changedSpy(&store, &CustomThemes::changed);
+        QVERIFY(changedSpy.isValid());
+
+        QSignalSpy draftChangedSpy(&store, &CustomThemes::draftChanged);
+        QVERIFY(draftChangedSpy.isValid());
+
+        const std::wstring nativeZulu =
+            QDir::toNativeSeparators(zuluPath).toStdWString();
+
+        // Allow reading and writing, but deliberately deny delete sharing.
+        ScopedWinHandle zuluHandle(CreateFileW(
+            nativeZulu.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr));
+
+        QVERIFY(zuluHandle.isValid());
+
+        {
+            QFile file(zuluPath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), zuluJson);
+        }
+
+        // Verify the deletion blocker independently of the theme fixture.
+        {
+            const QString probePath =
+                dir.filePath(QStringLiteral("probe.json"));
+            QVERIFY(writeFile(probePath, "{}"));
+
+            const std::wstring nativeProbe =
+                QDir::toNativeSeparators(probePath).toStdWString();
+
+            ScopedWinHandle probeHandle(CreateFileW(
+                nativeProbe.c_str(),
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr));
+
+            QVERIFY(probeHandle.isValid());
+            QVERIFY(!QFile::remove(probePath));
+
+            probeHandle.reset();
+            QVERIFY(QFile::remove(probePath));
+        }
+
+        QVERIFY(QFileInfo::exists(alphaPath));
+        QVERIFY(QFileInfo::exists(zuluPath));
+
+        const bool removed = store.remove(kGoodId);
+
+        QVERIFY(!removed);
+        QCOMPARE(errorSpy.count(), 1);
+        QCOMPARE(store.lastError(),
+                 QCoreApplication::translate(
+                     "CustomThemes", "Could not delete the theme"));
+
+        QVERIFY(QFileInfo::exists(zuluPath));
+
+        const themes::Family *afterFamily = store.find(kGoodId);
+        QVERIFY(afterFamily);
+        QCOMPARE(afterFamily->name, originalName);
+        QCOMPARE(afterFamily->light.primary, originalPrimary);
+        QCOMPARE(afterFamily->id, originalId);
+        QCOMPARE(store.families().size(), originalFamiliesSize);
+        QCOMPARE(store.revision(), originalRevision);
+        QCOMPARE(store.draftVersion(), originalDraftVersion);
+        QCOMPARE(store.editing(), originalEditing);
+
+        QCOMPARE(changedSpy.count(), 0);
+        QCOMPARE(draftChangedSpy.count(), 0);
+
+        zuluHandle.reset();
+
+        {
+            QFile file(zuluPath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), zuluJson);
+        }
+
+        CustomThemes reloaded(dir.path());
+        const themes::Family *reloadedFamily = reloaded.find(kGoodId);
+        QVERIFY(reloadedFamily);
+
+        qInfo() << "REV-002 diagnostic:"
+                << "alphaExists=" << QFileInfo::exists(alphaPath)
+                << "zuluExists=" << QFileInfo::exists(zuluPath)
+                << "originalName=" << originalName
+                << "reloadedName=" << reloadedFamily->name
+                << "originalPrimary=" << QString::number(originalPrimary, 16)
+                << "reloadedPrimary="
+                << QString::number(reloadedFamily->light.primary, 16);
+
+        QCOMPARE(reloadedFamily->name, originalName);
+        QCOMPARE(reloadedFamily->light.primary, originalPrimary);
+
+        QVERIFY(QFileInfo::exists(alphaPath));
+        {
+            QFile file(alphaPath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), alphaJson);
+        }
+#else
+        QSKIP("Windows-specific deterministic deletion blocker test");
+#endif
     }
 
     // --- Theme, with a settings file of its own ---------------------------
