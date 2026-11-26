@@ -502,10 +502,12 @@ QString CustomThemes::saveDraft()
         fail(tr("The theme needs a name"));
         return {};
     }
-    m_draft.name = name;
-    if (!writeFile(m_draft)) {
+    themes::Family candidate = m_draft;
+    candidate.name = name;
+    if (!writeFile(candidate)) {
         return {};
     }
+    m_draft = candidate;
     const QString id = m_draft.id;
     m_families.removeIf([&](const themes::Family &family) { return family.id == id; });
     m_families.append(m_draft);

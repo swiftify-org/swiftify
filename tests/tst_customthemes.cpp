@@ -318,6 +318,50 @@ private slots:
         QVERIFY(QFileInfo(blockedTarget).isDir());
     }
 
+    void failedSaveWithWhitespaceNameKeepsDraftNameUnchanged()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        CustomThemes store(dir.path());
+        QVERIFY(store.beginNew(QStringLiteral("default")));
+
+        const QString userInput = QStringLiteral("  My Theme  ");
+        store.setDraftName(userInput);
+        QCOMPARE(store.draftName(), userInput);
+
+        const QString originalDraftName = store.draftName();
+        const auto originalDraftVersion = store.draftVersion();
+        const auto originalRevision = store.revision();
+        const auto originalFamiliesCount = store.families().size();
+
+        const QString blockedTarget = storedThemePath(dir.path(), QStringLiteral("My Theme"), store.draftId());
+        QVERIFY(QDir().mkpath(blockedTarget));
+
+        QSignalSpy errors(&store, &CustomThemes::errorChanged);
+        QVERIFY(errors.isValid());
+        QSignalSpy draftChangedSpy(&store, &CustomThemes::draftChanged);
+        QVERIFY(draftChangedSpy.isValid());
+        QSignalSpy changedSpy(&store, &CustomThemes::changed);
+        QVERIFY(changedSpy.isValid());
+
+        const QString result = store.saveDraft();
+
+        QVERIFY(result.isEmpty());
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(!store.lastError().isEmpty());
+        QVERIFY(store.editing());
+        QVERIFY(store.dirty());
+        QCOMPARE(store.draftVersion(), originalDraftVersion);
+        QCOMPARE(store.families().size(), originalFamiliesCount);
+        QCOMPARE(store.revision(), originalRevision);
+        QCOMPARE(draftChangedSpy.count(), 0);
+        QCOMPARE(changedSpy.count(), 0);
+        QCOMPARE(jsonFiles(dir.path()), 0);
+        QVERIFY(QFileInfo(blockedTarget).isDir());
+
+        QCOMPARE(store.draftName(), originalDraftName);
+    }
+
     void missingExistingFileDoesNotCreateNewFile()
     {
         QTemporaryDir dir;
