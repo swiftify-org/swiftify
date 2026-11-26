@@ -19,6 +19,7 @@
 #include "render/MaterialSymbolItem.h"
 
 #include "app/Fonts.h"
+#include "app/Settings.h"
 
 #include <QFont>
 #include <QGlyphRun>
@@ -479,6 +480,9 @@ MaterialSymbolItem::MaterialSymbolItem(QQuickItem *parent)
 {
     setFlag(ItemHasContents);
     setImplicitSize(m_iconSize, m_iconSize);
+    if (Settings *settings = Settings::instance()) {
+        connect(settings, &Settings::zoomChanged, this, &MaterialSymbolItem::reshape);
+    }
 }
 
 MaterialSymbolItem::~MaterialSymbolItem() = default;
@@ -559,7 +563,8 @@ void MaterialSymbolItem::updatePolish()
         return;
     }
     m_stale = false;
-    const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1;
+    const qreal zoom = Settings::instance() ? Settings::instance()->zoom() : 1.0;
+    const qreal ratio = (window() ? window()->effectiveDevicePixelRatio() : 1) * (zoom > 0 ? zoom : 1.0);
     m_glyph = m_text.isEmpty() ? nullptr : glyphFor(m_text, m_fill, m_weight, m_grade, m_iconSize, ratio);
     update();
 }
@@ -568,6 +573,10 @@ void MaterialSymbolItem::itemChange(ItemChange change, const ItemChangeData &dat
 {
     QQuickItem::itemChange(change, data);
     if ((change == ItemSceneChange && data.window) || change == ItemDevicePixelRatioHasChanged) {
+        if (Settings *settings = Settings::instance()) {
+            disconnect(settings, &Settings::zoomChanged, this, &MaterialSymbolItem::reshape);
+            connect(settings, &Settings::zoomChanged, this, &MaterialSymbolItem::reshape);
+        }
         reshape();
     }
 }

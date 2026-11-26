@@ -8,6 +8,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: "create a release with the built bin"
+        type: boolean
+        default: false
   pull_request:
     paths:
       - .github/workflows/prebuilt.yml
@@ -206,7 +211,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.create_release == true
     needs: [windows, linux, macos]
     runs-on: ubuntu-24.04
     permissions:
