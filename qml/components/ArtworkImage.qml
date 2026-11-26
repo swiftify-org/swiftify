@@ -61,9 +61,11 @@ Item {
     /// the memory for each one shown. a coarser step, half as big again each
     /// time, decoded a card shown at 352 pixels at 384, a fifth more again
     readonly property int pixelSize: {
-        const ratio = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
-        const pixels = Math.min(maximumPixelSize, Math.max(16, Math.ceil(Math.max(width, height) * ratio / 32) * 32))
-        return Math.ceil(pixels / ratio)
+        const zoom = Settings.zoom > 0 ? Settings.zoom : 1
+        const screenRatio = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+        const totalRatio = screenRatio * zoom
+        const pixels = Math.min(maximumPixelSize, Math.max(16, Math.ceil(Math.max(width, height) * totalRatio / 32) * 32))
+        return Math.ceil(pixels / screenRatio)
     }
     /// what back holds is the cover front is loading, at another size
     readonly property bool sameCover: back.status === Image.Ready && back.source.toString() === front.source.toString()

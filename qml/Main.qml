@@ -212,6 +212,7 @@ ApplicationWindow {
         const scale = Settings.zoom
         item.transformOrigin = Item.TopLeft
         item.scale = scale
+        item.smooth = true
         if (Math.abs(item.width - width / scale) > 0.01) {
             item.width = width / scale
         }
