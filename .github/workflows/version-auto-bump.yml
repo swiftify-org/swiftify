@@ -1,0 +1,73 @@
+name: version-auto-bump
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  bump-version:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump Version in CMakeLists.txt and Tag
+        run: |
+          CMAKE_FILE="CMakeLists.txt"
+
+          if [ ! -f "$CMAKE_FILE" ]; then
+            echo "Error: $CMAKE_FILE not found!"
+            exit 1
+          fi
+
+          # Check if the merged PR explicitly touched the VERSION line
+          if git diff HEAD^1 HEAD^2 -- "$CMAKE_FILE" | grep -E '^\+[[:space:]]*VERSION[[:space:]]+[0-9]+' >/dev/null 2>&1; then
+            echo "PR already updated VERSION in $CMAKE_FILE. Skipping automated bump."
+            exit 0
+          fi
+
+          # Extract current version
+          CURRENT_VERSION=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+' "$CMAKE_FILE" | head -n 1 | sed -E 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
+
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "Error: Could not extract VERSION from $CMAKE_FILE"
+            exit 1
+          fi
+
+          echo "Current version in $CMAKE_FILE: $CURRENT_VERSION"
+
+          # Parse MAJOR.RELEASE.FIX
+          IFS='.' read -r MAJOR RELEASE FIX <<< "$CURRENT_VERSION"
+          MAJOR=${MAJOR:-0}
+          RELEASE=${RELEASE:-0}
+          FIX=${FIX:-0}
+
+          # Calculate new patch version
+          NEW_FIX=$((FIX + 1))
+          NEW_VERSION="${MAJOR}.${RELEASE}.${NEW_FIX}"
+          NEW_TAG="v${NEW_VERSION}"
+
+          echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
+
+          # Update only the VERSION line in CMakeLists.txt
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+(\.[0-9]+)?/\1${NEW_VERSION}/" "$CMAKE_FILE"
+
+          # Git configuration
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Commit, tag, and push back to branch
+          git add "$CMAKE_FILE"
+          git commit -m "chore: bump version to $NEW_TAG [skip ci]"
+          git tag -a "$NEW_TAG" -m "Automated patch bump to $NEW_TAG"
+
+          git push origin main --follow-tags
