@@ -46,6 +46,8 @@ T.Popup {
     padding: 0
     // drawn in the window: no window, render thread or buffers of its own
     popupType: T.Popup.Item
+    // an unsaved theme in the studio is dropped with the sheet
+    onClosed: Theme.customThemes.discardDraft()
 
 
     enter: Transition {

@@ -159,6 +159,7 @@ Theme::Theme(Settings *settings, QObject *parent)
     : QObject(parent)
     , m_settings(settings)
     , m_colors(new MaterialScheme(this))
+    , m_custom(new CustomThemes(QFileInfo(settings->filePath()).absolutePath() + QStringLiteral("/themes"), this))
 {
     if (!s_instance) {
         s_instance = this;
@@ -174,6 +175,17 @@ Theme::Theme(Settings *settings, QObject *parent)
     connect(m_settings, &Settings::themeSourceChanged, this, scheduleReload);
     connect(m_settings, &Settings::themeModeChanged, this, scheduleReload);
     connect(m_settings, &Settings::matugenColorsPathChanged, this, scheduleReload);
+    connect(m_custom, &CustomThemes::changed, this, scheduleReload);
+    // a theme being edited: every colour change recolours the app, which
+    // PlayerStyle follows on the gui thread, so a drag is applied once a frame
+    m_draftTimer.setSingleShot(true);
+    m_draftTimer.setInterval(16);
+    connect(&m_draftTimer, &QTimer::timeout, this, &Theme::reload);
+    connect(m_custom, &CustomThemes::draftChanged, this, [this] {
+        if (!m_draftTimer.isActive()) {
+            m_draftTimer.start();
+            }
+    });
 
     reload();
 }
@@ -273,6 +285,15 @@ QColor Theme::withAlpha(const QColor &color, qreal alpha)
 
 void Theme::reload()
 {
+    // a theme being edited is the whole app's colours until it is saved or
+    // dropped; the desktop's scheme is not read meanwhile
+    if (const themes::Family *draft = m_custom->draft()) {
+        const bool dark = wantsDark();
+        m_usingSystemScheme = false;
+        m_colors->setRoles(themes::roles(dark ? draft->dark : draft->light, dark), dark);
+        emit schemeChanged();
+        return;
+    }
     const bool wasUsingSystem = m_usingSystemScheme;
     const bool hadDark = m_colors->dark();
     const QString previousPath = m_systemSchemePath;
@@ -293,7 +314,12 @@ void Theme::reload()
 
     const bool dark = wantsDark();
     m_usingSystemScheme = false;
-    if (const themes::Family *family = themes::find(m_settings->themeSource())) {
+    const themes::Family *family = themes::find(m_settings->themeSource());
+    if (!family) {
+        // a custom theme that is gone or will not load falls through to the app's own colours
+        family = m_custom->find(m_settings->themeSource());
+    }
+    if (family) {
         m_colors->setRoles(themes::roles(dark ? family->dark : family->light, dark), dark);
     } else {
         m_colors->setRoles(rolesFromSeed(QColor::fromRgba(kAccent), dark, true), dark);
@@ -338,6 +364,9 @@ QList<ThemeOption> Theme::themeOptions(bool dark) const
     for (const themes::Family &family : themes::families()) {
         options.append(option(family.id, family.name, themes::roles(dark ? family.dark : family.light, dark)));
     }
+    for (const themes::Family &family : m_custom->families()) {
+        options.append(option(family.id, family.name, themes::roles(dark ? family.dark : family.light, dark)));
+        }
     return options;
 }
 

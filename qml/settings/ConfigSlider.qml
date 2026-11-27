@@ -32,6 +32,8 @@ Column {
     property real stepSize: 0
     property string valueText: String(Math.round(value))
     signal moved(real value)
+    
+    readonly property bool pressed: slider.pressed
 
     width: parent ? parent.width : 0
     topPadding: 8
@@ -60,6 +62,8 @@ Column {
     }
 
     StyledSlider {
+        id: slider
+
         x: 12
         width: parent.width - 24
         from: root.from
