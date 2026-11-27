@@ -217,8 +217,21 @@ std::optional<themes::Family> readFile(const QString &path, const QString &id, Q
         error = tr("The file could not be read");
         return std::nullopt;
     }
+    const QByteArray data = file.read(kMaxFileSize + 1);
+    if (file.error() != QFileDevice::NoError) {
+        error = tr("The file could not be read");
+        return std::nullopt;
+    }
+    if (data.size() > kMaxFileSize) {
+        error = tr("The file is too large for a theme");
+        return std::nullopt;
+    }
+    if (!file.atEnd()) {
+        error = tr("The file could not be read");
+        return std::nullopt;
+    }
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(data, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         error = tr("The file is not valid JSON");
         return std::nullopt;

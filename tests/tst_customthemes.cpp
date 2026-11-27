@@ -155,6 +155,58 @@ private slots:
         QCOMPARE(store.families().first().id, kGoodId);
     }
 
+    void fileAtExactSizeLimit_data()
+    {
+        QTest::addColumn<qint64>("fileSize");
+        QTest::addColumn<bool>("shouldAccept");
+
+        // The 256 KiB limit used by CustomThemes::readFile() at kMaxFileSize = 256 * 1024
+        constexpr qint64 kMaxFileSize = 256 * 1024;
+
+        QTest::newRow("below_limit") << (kMaxFileSize - 1) << true;
+        QTest::newRow("exact_limit") << kMaxFileSize << true;
+        QTest::newRow("above_limit") << (kMaxFileSize + 1) << false;
+    }
+
+    void fileAtExactSizeLimit()
+    {
+        QFETCH(qint64, fileSize);
+        QFETCH(bool, shouldAccept);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        // Valid JSON theme fixture matching existing test patterns
+        // Satisfies parser: schema=1 (valid), name present (valid),
+        // base omitted (defaults to "default"), light/dark omitted (defaults from base)
+        const QByteArray validJson = R"({"schema":1,"name":"Boundary"})";
+
+        // Pad with spaces to reach exact file size (spaces are valid JSON whitespace)
+        const qint64 paddingSize = fileSize - static_cast<qint64>(validJson.size());
+        QVERIFY(paddingSize >= 0);
+        const QByteArray paddedJson = validJson + QByteArray(paddingSize, ' ');
+
+        // Verify the padded JSON is the expected size
+        QCOMPARE(static_cast<qint64>(paddedJson.size()), fileSize);
+
+        // Create the test file
+        const QString filePath = storedThemePath(dir.path(), QStringLiteral("Boundary"), kGoodId);
+        QVERIFY(writeFile(filePath, paddedJson));
+
+        // Verify the file on disk matches expected size
+        QCOMPARE(QFileInfo(filePath).size(), fileSize);
+
+        // Load themes and verify result
+        CustomThemes store(dir.path());
+        if (shouldAccept) {
+            QCOMPARE(store.families().size(), 1);
+            QCOMPARE(store.families().first().id, kGoodId);
+            QCOMPARE(store.families().first().name, QStringLiteral("Boundary"));
+        } else {
+            QCOMPARE(store.families().size(), 0);
+        }
+    }
+
     void invalidDuplicateDoesNotBlockLaterValidFile()
     {
         QTemporaryDir dir;
