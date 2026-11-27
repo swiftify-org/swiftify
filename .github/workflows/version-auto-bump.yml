@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bump Version in CMakeLists.txt and Tag
+      - name: Bump Version in CMakeLists.txt
         run: |
           CMAKE_FILE="CMakeLists.txt"
 
@@ -29,13 +29,13 @@ jobs:
             exit 1
           fi
 
-          # Check if the merged PR explicitly touched the VERSION line
-          if git diff HEAD^1 HEAD^2 -- "$CMAKE_FILE" | grep -E '^\+[[:space:]]*VERSION[[:space:]]+[0-9]+' >/dev/null 2>&1; then
+          # Inspect only what this PR added to main compared to the commit right before merge
+          if git diff HEAD~1 HEAD -- "$CMAKE_FILE" | grep -E '^\+[[:space:]]*VERSION[[:space:]]+[0-9]+' >/dev/null 2>&1; then
             echo "PR already updated VERSION in $CMAKE_FILE. Skipping automated bump."
             exit 0
           fi
 
-          # Extract current version
+          # Extract current version from the VERSION line
           CURRENT_VERSION=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+' "$CMAKE_FILE" | head -n 1 | sed -E 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
 
           if [ -z "$CURRENT_VERSION" ]; then
@@ -54,7 +54,6 @@ jobs:
           # Calculate new patch version
           NEW_FIX=$((FIX + 1))
           NEW_VERSION="${MAJOR}.${RELEASE}.${NEW_FIX}"
-          NEW_TAG="v${NEW_VERSION}"
 
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
@@ -65,8 +64,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Commit, tag, and push back to branch
+          # Commit and push back to main
           git add "$CMAKE_FILE"
-          git commit -m "chore: automated bump version to $NEW_TAG"
+          git commit -m "chore: automated bump version to v${NEW_VERSION}"
 
-          git push origin main --follow-tags
+          git push origin main
