@@ -67,7 +67,6 @@ jobs:
 
           # Commit, tag, and push back to branch
           git add "$CMAKE_FILE"
-          git commit -m "chore: bump version to $NEW_TAG [skip ci]"
-          git tag -a "$NEW_TAG" -m "Automated patch bump to $NEW_TAG"
+          git commit -m "chore: automated bump version to $NEW_TAG"
 
           git push origin main --follow-tags
