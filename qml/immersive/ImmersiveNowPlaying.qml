@@ -349,6 +349,7 @@ Item {
                     enabled: Player.hasSong
                     tooltip: qsTr("Shuffle")
                     onClicked: Player.toggleShuffle()
+                    onSecondaryClicked: Player.reshuffle()
                 }
                 Control {
                     effect: TransportButton.NudgeLeft
