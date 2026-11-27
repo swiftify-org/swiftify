@@ -195,6 +195,7 @@ public:
     Q_INVOKABLE void adjustVolume(double delta);
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void toggleShuffle();
+    Q_INVOKABLE void reshuffle();
     Q_INVOKABLE void cycleRepeatMode();
     Q_INVOKABLE void toggleLyricsPanel();
     Q_INVOKABLE void toggleQueuePanel();

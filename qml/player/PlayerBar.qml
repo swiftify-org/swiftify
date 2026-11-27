@@ -93,6 +93,7 @@ Item {
             fillWhenToggled: false
             tooltip: Player.shuffle ? qsTr("Disable shuffle") : qsTr("Enable shuffle")
             onClicked: Player.toggleShuffle()
+            onSecondaryClicked: Player.reshuffle()
         }
         TransportButton {
             anchors.verticalCenter: parent.verticalCenter
