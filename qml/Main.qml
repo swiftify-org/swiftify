@@ -901,6 +901,104 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+-"]; onActivated: window.setZoom(window.zoom - window.zoomStep) }
     Shortcut { sequence: "Ctrl+0"; onActivated: window.setZoom(1) }
 
+    component ResizeHandle: MouseArea {
+        required property int edges
+        required property int cursor
+        acceptedButtons: Qt.LeftButton
+        hoverEnabled: true
+        cursorShape: cursor
+        onPressed: (mouse) => {
+            if (mouse.button === Qt.LeftButton) {
+                window.startSystemResize(edges)
+            }
+        }
+    }
+
+    // frameless linux windows (e.g. KDE/KWin, GNOME) need client-side edge and
+    // corner hit areas to show resize cursors and initiate system resize.
+    Item {
+        id: resizeHandles
+        anchors.fill: parent
+        z: 1000
+        visible: !App.macOS && !App.windows && window.visibility === Window.Windowed
+
+        readonly property int edge: 6
+        readonly property int corner: 10
+
+        ResizeHandle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: resizeHandles.corner
+            anchors.rightMargin: resizeHandles.corner
+            height: resizeHandles.edge
+            edges: Qt.TopEdge
+            cursor: Qt.SizeVerCursor
+        }
+        ResizeHandle {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: resizeHandles.corner
+            anchors.rightMargin: resizeHandles.corner
+            height: resizeHandles.edge
+            edges: Qt.BottomEdge
+            cursor: Qt.SizeVerCursor
+        }
+        ResizeHandle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin: resizeHandles.corner
+            anchors.bottomMargin: resizeHandles.corner
+            width: resizeHandles.edge
+            edges: Qt.LeftEdge
+            cursor: Qt.SizeHorCursor
+        }
+        ResizeHandle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin: resizeHandles.corner
+            anchors.bottomMargin: resizeHandles.corner
+            width: resizeHandles.edge
+            edges: Qt.RightEdge
+            cursor: Qt.SizeHorCursor
+        }
+        ResizeHandle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            width: resizeHandles.corner
+            height: resizeHandles.corner
+            edges: Qt.TopEdge | Qt.LeftEdge
+            cursor: Qt.SizeFDiagCursor
+        }
+        ResizeHandle {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            width: resizeHandles.corner
+            height: resizeHandles.corner
+            edges: Qt.TopEdge | Qt.RightEdge
+            cursor: Qt.SizeBDiagCursor
+        }
+        ResizeHandle {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            width: resizeHandles.corner
+            height: resizeHandles.corner
+            edges: Qt.BottomEdge | Qt.LeftEdge
+            cursor: Qt.SizeBDiagCursor
+        }
+        ResizeHandle {
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: resizeHandles.corner
+            height: resizeHandles.corner
+            edges: Qt.BottomEdge | Qt.RightEdge
+            cursor: Qt.SizeFDiagCursor
+        }
+    }
+
     Loader {
         active: App.nativeMenuBar
         sourceComponent: MacMenuBar {
